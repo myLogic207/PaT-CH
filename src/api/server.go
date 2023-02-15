@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 
 	"github.com/braintree/manners"
 	"github.com/gin-contrib/sessions"
@@ -38,20 +39,21 @@ func parseConf(toConf *system.ConfigMap) (*ApiConfig, error) {
 	configPort, err := toConf.Get("port")
 	if err != nil {
 		log.Println("Could not determine port, using default")
-	} else if val, ok := configPort.(uint16); ok {
-		port = val
 	} else {
-		log.Println("Could not determine port, using default")
+		p, err := strconv.ParseUint(configPort, 10, 16)
+		if err != nil {
+			log.Println("Could not parse port, using default")
+		} else {
+			port = uint16(p)
+		}
 	}
 
 	host := "localhost"
 	cHost, err := toConf.Get("host")
 	if err != nil {
 		log.Println("Could not determine host, using localhost")
-	} else if val, ok := cHost.(string); ok {
-		host = val
 	} else {
-		log.Println("Could not determine host, using localhost")
+		host = cHost
 	}
 
 	config := &ApiConfig{
@@ -64,35 +66,26 @@ func parseConf(toConf *system.ConfigMap) (*ApiConfig, error) {
 	configRedis, err := toConf.Get("redis")
 	if err != nil {
 		log.Println("could not determine redis config, not using")
-	} else if val, ok := configRedis.(bool); ok {
-		useRedis = val
 	} else {
-		log.Println("could not determine redis config, not using")
+		use, err := strconv.ParseBool(configRedis)
+		if err != nil {
+			log.Println("could not parse redis config, not using")
+		} else {
+			useRedis = use
+		}
 	}
 
 	if !useRedis {
 		return config, nil
 	}
 
-	var redisHost string
-	confRedisHost, err := toConf.Get("redis_host")
+	redisHost, err := toConf.Get("redishost")
 	if err != nil {
-		log.Println("Could not determine redis host, aborting redis connection")
-		return config, errors.New("could not determine redis host, aborting redis connection")
-	} else if val, ok := confRedisHost.(string); ok {
-		redisHost = val
-	} else {
-		log.Println("Could not determine redis host, aborting redis connection")
 		return config, errors.New("could not determine redis host, aborting redis connection")
 	}
 
-	redisPassword := ""
-	configPassword, err := toConf.Get("redis_password")
+	redisPassword, err := toConf.Get("redispass")
 	if err != nil {
-		log.Println("Could not determine redis password, trying with none")
-	} else if val, ok := configPassword.(string); ok {
-		redisPassword = val
-	} else {
 		log.Println("Could not determine redis password, trying with none")
 	}
 
@@ -100,10 +93,13 @@ func parseConf(toConf *system.ConfigMap) (*ApiConfig, error) {
 	configRedisDB, err := toConf.Get("redisdb")
 	if err != nil {
 		log.Println("Could not determine redis db, using 0")
-	} else if val, ok := configRedisDB.(int); ok {
-		redisDB = val
 	} else {
-		log.Println("Could not determine redis db, using 0")
+		db, err := strconv.ParseUint(configRedisDB, 10, 16)
+		if err != nil {
+			log.Println("Could not parse redis db, using 0")
+		} else {
+			redisDB = int(db)
+		}
 	}
 
 	return &ApiConfig{
