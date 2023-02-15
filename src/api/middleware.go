@@ -7,10 +7,11 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func NewRouter() *gin.Engine {
+func NewRouter(sessionCtl *SessionControl, cache sessions.Store) *gin.Engine {
 	router := gin.New()
 	router.Use(gin.Logger())
 	router.Use(gin.Recovery())
+	router.Use(sessions.Sessions("mysession", cache))
 
 	router.GET("/ping", routePing)
 
@@ -18,19 +19,14 @@ func NewRouter() *gin.Engine {
 	apiV1 := api.Group("/v1")
 
 	apiV1.GET("/health", routeHealth)
+	apiV1.POST("/connect", sessionCtl.Connect)
+	apiV1.POST("/disconnect", sessionCtl.Disonnect)
 
 	apiV1Auth := apiV1.Group("/auth")
-	apiV1Auth.POST("/login", routeLogin)
-	apiV1Auth.POST("/logout", routeLogout)
-	apiV1Auth.GET("/test", checkId, testSession)
+	apiV1Auth.Use(RoutePass())
+	apiV1Auth.GET("/session", GetID)
 
 	return router
-}
-
-// helper functions
-
-func getId() string {
-	return "1234"
 }
 
 // routes
@@ -49,43 +45,23 @@ func routeHealth(c *gin.Context) {
 	})
 }
 
-// Auth routes
-
-func checkId(c *gin.Context) {
-	session := sessions.Default(c)
-	sessionID := session.Get("id")
-	if sessionID == nil {
-		c.JSON(http.StatusNotFound, gin.H{
-			"message": "unauthorized",
-		})
-		c.Abort()
-	} else {
-		c.Next()
+func RoutePass() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		session := sessions.Default(c)
+		sessionID := session.Get("id")
+		if sessionID == nil {
+			c.JSON(http.StatusNotFound, gin.H{
+				"message": "unauthorized",
+			})
+			c.Abort()
+		}
 	}
 }
 
-func routeLogin(c *gin.Context) {
+func GetID(c *gin.Context) {
 	session := sessions.Default(c)
-	session.Set("id", getId())
-	session.Save()
 	c.JSON(http.StatusOK, gin.H{
-		"message": "User Sign in successfully",
-	})
-}
-
-func routeLogout(c *gin.Context) {
-	session := sessions.Default(c)
-	session.Clear()
-	session.Save()
-	c.JSON(http.StatusOK, gin.H{
-		"message": "User Sign out successfully",
-	})
-}
-
-func testSession(c *gin.Context) {
-	session := sessions.Default(c)
-	sessionID := session.Get("id")
-	c.JSON(http.StatusOK, gin.H{
-		"message": sessionID,
+		// This is "complicated" to test session exists (so we need to check beforehand as well?)
+		"message": session.Get("id").(string),
 	})
 }
