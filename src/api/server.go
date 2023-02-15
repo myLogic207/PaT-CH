@@ -21,7 +21,7 @@ type ApiConfig struct {
 	Redis         bool   `json:"redis"`
 	RedisHost     string `json:"redis_host"`
 	RedisPassword string `json:"redis_password"`
-	RedisDB       int    `json:"redis_db"`
+	RedisDB       string `json:"redis_db"`
 }
 
 func (c ApiConfig) Addr() string {
@@ -29,9 +29,10 @@ func (c ApiConfig) Addr() string {
 }
 
 type Server struct {
-	router  *gin.Engine
-	server  *manners.GracefulServer
-	running bool
+	router     *gin.Engine
+	server     *manners.GracefulServer
+	sessionCtl SessionControl
+	running    bool
 }
 
 func parseConf(toConf *system.ConfigMap) (*ApiConfig, error) {
@@ -89,18 +90,13 @@ func parseConf(toConf *system.ConfigMap) (*ApiConfig, error) {
 		log.Println("Could not determine redis password, trying with none")
 	}
 
-	redisDB := 0
-	configRedisDB, err := toConf.Get("redisdb")
+	redisDB, err := toConf.Get("redisdb")
 	if err != nil {
 		log.Println("Could not determine redis db, using 0")
-	} else {
-		db, err := strconv.ParseUint(configRedisDB, 10, 16)
-		if err != nil {
-			log.Println("Could not parse redis db, using 0")
-		} else {
-			redisDB = int(db)
-		}
+		redisDB = "0"
 	}
+
+	log.Println("Api finished parsing config")
 
 	return &ApiConfig{
 		Host:          host,
@@ -108,7 +104,7 @@ func parseConf(toConf *system.ConfigMap) (*ApiConfig, error) {
 		Redis:         useRedis,
 		RedisHost:     redisHost,
 		RedisPassword: redisPassword,
-		RedisDB:       int(redisDB),
+		RedisDB:       redisDB,
 	}, nil
 }
 
@@ -121,11 +117,11 @@ func NewServer(config system.ConfigMap) *Server {
 }
 
 func NewServerPreConf(config *ApiConfig) *Server {
-	router := NewRouter()
+	sessionCtl := NewSessionControl()
 	var cache sessions.Store
 	if config.Redis {
 		log.Println("Using Redis Cache")
-		conn, err := redis.NewStoreWithDB(10, "tcp", config.RedisHost, config.RedisPassword, fmt.Sprintf("%d", config.RedisDB))
+		conn, err := redis.NewStoreWithDB(10, "tcp", config.RedisHost, config.RedisPassword, config.RedisDB)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -134,7 +130,7 @@ func NewServerPreConf(config *ApiConfig) *Server {
 		log.Println("No cache provided, using cookie fallback")
 		cache = cookie.NewStore([]byte("secret"))
 	}
-	router.Use(sessions.Sessions("sessions", cache))
+	router := NewRouter(sessionCtl, cache)
 
 	server := manners.NewWithServer(&http.Server{
 		Addr:    config.Addr(),
@@ -142,9 +138,10 @@ func NewServerPreConf(config *ApiConfig) *Server {
 	})
 
 	return &Server{
-		router:  router,
-		server:  server,
-		running: false,
+		router:     router,
+		server:     server,
+		sessionCtl: *sessionCtl,
+		running:    false,
 	}
 }
 
