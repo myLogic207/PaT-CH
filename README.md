@@ -1,4 +1,5 @@
-# AI Speach Input microservice
+# PaT-CH
 
-Microservice written in go responsible for receiving speach input,
-convert it to Text, annotate it with intents, etc.
+The Pass-Through Connection Handler
+
+A microservice written in GO (backed by a Redis Cache) to monitor, save, log, prepare network traffic.
