@@ -1,14 +1,32 @@
 package main
 
 import (
+	"os"
 	"time"
 
-	"github.com/mylogic207/PaT-CH/cache"
+	_ "github.com/joho/godotenv/autoload"
+	"github.com/mylogic207/PaT-CH/api"
+	"github.com/mylogic207/PaT-CH/system"
 )
 
 func main() {
-	Cache := cache.NewConnector("redis://default:redispw@localhost:49154", 0)
-	Cache.Connect()
-	defer Cache.Close()
+	println(os.Getwd())
+	config := system.LoadConfig("PATCH")
+	config.Print()
+	// sessionCache := cache.NewConnector(config.redisConfig)
+	// err := sessionCache.Connect()
+	// defer sessionCache.Close()
+	// if err != nil {
+	// 	log.Println(err)
+	// }
+	apiConfig, err := config.Get("api")
+	if err != nil {
+		println("Error getting API conf, using default values")
+	}
+	os.Exit(0)
+	server := api.NewServer(apiConfig)
+	server.Start()
+	defer server.Stop()
 	time.Sleep(10 * time.Second)
+	print("done")
 }
