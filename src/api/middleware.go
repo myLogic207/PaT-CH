@@ -22,6 +22,7 @@ func NewRouter() *gin.Engine {
 	apiV1Auth := apiV1.Group("/auth")
 	apiV1Auth.POST("/login", routeLogin)
 	apiV1Auth.POST("/logout", routeLogout)
+	apiV1Auth.GET("/test", checkId, testSession)
 
 	return router
 }
@@ -58,6 +59,8 @@ func checkId(c *gin.Context) {
 			"message": "unauthorized",
 		})
 		c.Abort()
+	} else {
+		c.Next()
 	}
 }
 
@@ -76,5 +79,13 @@ func routeLogout(c *gin.Context) {
 	session.Save()
 	c.JSON(http.StatusOK, gin.H{
 		"message": "User Sign out successfully",
+	})
+}
+
+func testSession(c *gin.Context) {
+	session := sessions.Default(c)
+	sessionID := session.Get("id")
+	c.JSON(http.StatusOK, gin.H{
+		"message": sessionID,
 	})
 }
