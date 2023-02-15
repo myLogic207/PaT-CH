@@ -18,49 +18,29 @@ func twoSplit(variable string, splitter string) (string, string, error) {
 
 type Configurable interface {
 	map[string]string
-	Get(field string) (interface{}, error)
-	Set(field string, val interface{}) error
+	Get(field string) (string, error)
+	Set(field string, val string) error
 }
 
-type ConfigMap map[string]interface{}
+type ConfigMap map[string]string
 
-func (c ConfigMap) Get(field string) (interface{}, error) {
+func (c ConfigMap) Get(field string) (string, error) {
 	if val := c[strings.ToLower(field)]; val != "" {
 		return val, nil
 	}
 	return "", fmt.Errorf("Config Field not found: %s", field)
 }
 
-func (c ConfigMap) Set(field string, val interface{}) error {
-	if val, _ := val.(string); val != "" {
-		return fmt.Errorf("ConfigMap field not empty: %s", field)
-	}
-	c[strings.ToLower(field)] = val
+func (c ConfigMap) Set(field string, val string) error {
+	field = strings.ToLower(field)
+	// if c[field] != "" {
+	// 	return fmt.Errorf("Config field not empty: %s", field)
+	// }
+	c[field] = val
 	return nil
 }
 
 type Config map[string]ConfigMap
-
-// func setField(obj interface{}, key string, val interface{}) error {
-// 	confVal := reflect.ValueOf(obj).Elem()
-// 	confField := confVal.FieldByName(key)
-
-// 	if !confField.IsValid() {
-// 		return fmt.Errorf("no such field: %s in obj", key)
-// 	}
-
-// 	if !confField.CanSet() {
-// 		return fmt.Errorf("cannot set %s field value", key)
-// 	}
-
-// 	confType := confField.Type()
-// 	value := reflect.ValueOf(val)
-// 	if confType != value.Type() {
-// 		return errors.New("provided value type didn't match obj field type")
-// 	}
-// 	confField.Set(value)
-// 	return nil
-// }
 
 func (c Config) Get(field string) (ConfigMap, error) {
 	if val := c[strings.ToLower(field)]; val != nil {
@@ -89,7 +69,7 @@ func (c Config) GetField(parent string, field string) (interface{}, error) {
 	return nil, fmt.Errorf("configuration not found: %s->%s", parent, field)
 }
 
-func (c Config) SetField(section string, field string, val interface{}) error {
+func (c Config) SetField(section string, field string, val string) error {
 	section = strings.ToLower(section)
 	if _, err := c.Get(section); err != nil {
 		c[section] = make(ConfigMap)
@@ -100,9 +80,9 @@ func (c Config) SetField(section string, field string, val interface{}) error {
 func (c *Config) Print() {
 	var buffer strings.Builder
 	for k, v := range *c {
-		buffer.WriteString(fmt.Sprintf("%s:\n", k))
+		buffer.WriteString(fmt.Sprintf("\t%s:\n", k))
 		for k2, v2 := range v {
-			buffer.WriteString(fmt.Sprintf("\t%s: %s\n", k2, v2))
+			buffer.WriteString(fmt.Sprintf("\t\t%s:\t%s\n", k2, v2))
 		}
 	}
 	fmt.Printf("Config:\n%+v\n", buffer.String())
