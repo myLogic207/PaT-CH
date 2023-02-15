@@ -3,6 +3,7 @@ package cache
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 
 	"github.com/redis/go-redis/v9"
@@ -10,59 +11,67 @@ import (
 
 var ctx = context.Background()
 
-// type Cache interface {
-// 	Get(context context.Context, key string) (string, error)
-// 	Set(key string, value string) error
-// }
-
-type RedisConnector struct {
-	db     int
-	active bool
-	Cache  *redis.Client
+type Config struct {
+	Host       string
+	Port       uint16
+	Password   string
+	DB         int
+	Idle       int
+	MaxActive  int
+	TimeoutSec int
+	// Addr     func() string
 }
 
-func NewConnector(url string, db int) *RedisConnector {
-	options, err := redis.ParseURL(url)
-	if err != nil {
-		panic(err)
-	}
-	client := redis.NewClient(options)
+func (c Config) Addr() string {
+	return c.Host + ":" + fmt.Sprint(c.Port)
+}
+
+type RedisConnector struct {
+	Active bool
+	Store  *redis.Client
+}
+
+func NewConnector(config *Config) *RedisConnector {
+	connection := redis.NewClient(&redis.Options{
+		Addr:     config.Addr(),
+		Password: config.Password,
+		DB:       config.DB,
+	})
 	return &RedisConnector{
-		db:     db,
-		Cache:  client,
-		active: false,
+		Store:  connection,
+		Active: false,
 	}
 }
 
 func (c *RedisConnector) Connect() error {
-	if err := c.Cache.Ping(ctx).Err(); err != nil {
+	if err := c.Store.Ping(ctx).Err(); err != nil {
 		log.Println(err)
-		c.active = false
+		c.Active = false
 		return nil
 	}
-	c.active = true
+	c.Active = true
 	log.Println("connected to Redis cache")
 	return nil
 }
 
 func (c *RedisConnector) Close() error {
-	if c.active {
-		return c.Cache.Close()
+	if c.Active {
+		return c.Store.Close()
 	}
 	return errors.New("redis already closed")
 }
 
 func (c *RedisConnector) Get(key string) (string, error) {
 	// if Redis get from Redis
-	if c.active {
-		return c.Cache.Get(ctx, key).Result()
+	if c.Active {
+		return c.Store.Get(ctx, key).Result()
 	}
 	return "", errors.New("redis not active")
 }
 
 func (c *RedisConnector) Set(key string, value string) error {
-	if c.active {
-		return c.Cache.Set(ctx, key, value, 0).Err()
+	if c.Active {
+		return c.Store.Set(ctx, key, value, 0).Err()
 	}
 	return errors.New("redis not active")
 }
