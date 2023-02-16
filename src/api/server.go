@@ -125,7 +125,7 @@ func NewServerPreConf(config *ApiConfig) *Server {
 	var cache sessions.Store
 	if config.Redis {
 		log.Println("Using Redis Cache")
-		conn, err := redis.NewStoreWithDB(10, "tcp", config.RedisHost, config.RedisPassword, config.RedisDB)
+		conn, err := redis.NewStoreWithDB(10, "tcp", fmt.Sprintf("%s:%d", config.RedisHost, config.RedisPort), config.RedisPassword, config.RedisDB, []byte("secret"))
 		if err != nil {
 			log.Fatal(err)
 		}
