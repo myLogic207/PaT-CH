@@ -33,3 +33,5 @@ data
 logs
 dump.rdb
 redis.conf
+
+out
