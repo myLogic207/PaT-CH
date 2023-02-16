@@ -30,32 +30,32 @@ func (c ApiConfig) Addr() string {
 }
 
 type Server struct {
+	config     *ApiConfig
 	router     *gin.Engine
 	server     *manners.GracefulServer
 	sessionCtl SessionControl
 	running    bool
+	secure     bool
 }
 
-func parseConf(toConf *system.ConfigMap) (*ApiConfig, error) {
+func ParseConf(toConf *system.ConfigMap) (*ApiConfig, error) {
 	var port uint16 = 2070
-	configPort, err := toConf.Get("port")
-	if err != nil {
-		log.Println("Could not determine port, using default")
-	} else {
-		p, err := strconv.ParseUint(configPort, 10, 16)
+	if val, ok := toConf.Get("port"); ok {
+		p, err := strconv.ParseUint(val, 10, 16)
 		if err != nil {
-			log.Println("Could not parse port, using default")
+			log.Println("could not parse port, using default")
 		} else {
 			port = uint16(p)
 		}
+	} else {
+		log.Println("could not determine port, using default")
 	}
 
 	host := "localhost"
-	cHost, err := toConf.Get("host")
-	if err != nil {
-		log.Println("Could not determine host, using localhost")
+	if val, ok := toConf.Get("host"); ok {
+		host = val
 	} else {
-		host = cHost
+		log.Println("could not determine host, using localhost")
 	}
 
 	config := &ApiConfig{
@@ -63,47 +63,49 @@ func parseConf(toConf *system.ConfigMap) (*ApiConfig, error) {
 		Port:  uint16(port),
 		Redis: false,
 	}
-	configRedis, err := toConf.Get("redis")
-	if err != nil {
-		log.Println("could not determine redis config, not using")
-	} else {
-		use, err := strconv.ParseBool(configRedis)
+
+	if val, ok := toConf.Get("redis"); ok {
+		use, err := strconv.ParseBool(val)
 		if err != nil {
 			log.Println("could not parse redis config, not using")
 		} else {
 			config.Redis = use
 		}
+	} else {
+		log.Println("could not determine redis config, not using")
 	}
 
 	if !config.Redis {
 		return config, nil
 	}
 
-	config.RedisHost, err = toConf.Get("redishost")
-	if err != nil {
+	if val, ok := toConf.Get("redishost"); ok {
+		config.RedisHost = val
+	} else {
 		return config, errors.New("could not determine redis host, aborting redis connection")
 	}
 
-	configPort, err = toConf.Get("redisport")
-	if err != nil {
-		return config, errors.New("could not determine redis port, aborting redis connection")
-	} else {
-		p, err := strconv.ParseUint(configPort, 10, 16)
+	if val, ok := toConf.Get("redisport"); ok {
+		p, err := strconv.ParseUint(val, 10, 16)
 		if err != nil {
 			return config, errors.New("could not parse redis port, aborting redis connection")
 		} else {
 			config.RedisPort = uint16(p)
 		}
+	} else {
+		return config, errors.New("could not determine redis port, aborting redis connection")
 	}
 
-	config.RedisPassword, err = toConf.Get("redispass")
-	if err != nil {
-		log.Println("Could not determine redis password, trying with none")
+	if val, ok := toConf.Get("redispass"); ok {
+		config.RedisPassword = val
+	} else {
+		log.Println("could not determine redis password, trying with none")
 	}
 
-	config.RedisDB, err = toConf.Get("redisdb")
-	if err != nil {
-		log.Println("Could not determine redis db, using 0")
+	if val, ok := toConf.Get("redisdb"); ok {
+		config.RedisDB = val
+	} else {
+		log.Println("could not determine redis db, using 0")
 		config.RedisDB = "0"
 	}
 
@@ -113,7 +115,7 @@ func parseConf(toConf *system.ConfigMap) (*ApiConfig, error) {
 }
 
 func NewServer(config system.ConfigMap) *Server {
-	conf, err := parseConf(&config)
+	conf, err := ParseConf(&config)
 	if err != nil {
 		log.Println(err)
 	}
@@ -142,27 +144,31 @@ func NewServerPreConf(config *ApiConfig) *Server {
 	})
 
 	return &Server{
+		config:     config,
 		router:     router,
 		server:     server,
 		sessionCtl: *sessionCtl,
 		running:    false,
+		secure:     false,
 	}
 }
 
 func (s *Server) Start() {
 	log.Println("Starting server")
 	s.running = true
+	log.Println("Servering on " + s.config.Addr())
 	go s.server.ListenAndServe()
 }
 
 func (s *Server) StartSecure(certFile, keyFile string) {
 	s.running = true
+	s.secure = true
 	go s.server.ListenAndServeTLS(certFile, keyFile)
 }
 
 func (s *Server) Stop() error {
 	if !s.running {
-		return nil
+		return errors.New("server not running")
 	}
 	if close := s.server.Close(); close {
 		log.Println("Server closing")
@@ -171,6 +177,14 @@ func (s *Server) Stop() error {
 	} else {
 		return errors.New("server already closing")
 	}
+}
+
+func (s *Server) Addr(route string) string {
+	pre := "http://"
+	if s.secure {
+		pre = "https://"
+	}
+	return pre + s.config.Addr() + route
 }
 
 func (s *Server) SetRoute(method, path string, handler gin.HandlerFunc) {

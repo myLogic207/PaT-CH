@@ -1,7 +1,6 @@
 package main
 
 import (
-	"os"
 	"time"
 
 	_ "github.com/joho/godotenv/autoload"
@@ -10,7 +9,6 @@ import (
 )
 
 func main() {
-	println(os.Getwd())
 	config := system.LoadConfig("PATCH")
 	config.Print()
 
@@ -21,11 +19,25 @@ func main() {
 	// 	log.Println(err)
 	// }
 
-	apiConfig, err := config.Get("api")
-	if err != nil {
+	var apiConfig *api.ApiConfig
+	if val, ok := config.Get("api"); ok {
+		if cMap, ok := val.(system.ConfigMap); ok {
+			conf, err := api.ParseConf(&cMap)
+			if err != nil {
+				println("Error getting API conf, using default values")
+				apiConfig = &api.ApiConfig{
+					Host:  "localhost",
+					Port:  2070,
+					Redis: false,
+				}
+			} else {
+				apiConfig = conf
+			}
+		}
+	} else {
 		println("Error getting API conf, using default values")
 	}
-	server := api.NewServer(apiConfig)
+	server := api.NewServerPreConf(apiConfig)
 	server.Start()
 	// defer server.Stop()
 	time.Sleep(10000 * time.Second)
