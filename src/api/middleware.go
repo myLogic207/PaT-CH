@@ -50,7 +50,7 @@ func RoutePass() gin.HandlerFunc {
 		session := sessions.Default(c)
 		sessionID := session.Get("id")
 		if sessionID == nil {
-			c.JSON(http.StatusNotFound, gin.H{
+			c.JSON(http.StatusForbidden, gin.H{
 				"message": "unauthorized",
 			})
 			c.Abort()
