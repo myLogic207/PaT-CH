@@ -20,6 +20,7 @@ type ApiConfig struct {
 	Port          uint16 `json:"port"`
 	Redis         bool   `json:"redis"`
 	RedisHost     string `json:"redis_host"`
+	RedisPort     uint16 `json:"redis_port"`
 	RedisPassword string `json:"redis_password"`
 	RedisDB       string `json:"redis_db"`
 }
@@ -62,8 +63,6 @@ func parseConf(toConf *system.ConfigMap) (*ApiConfig, error) {
 		Port:  uint16(port),
 		Redis: false,
 	}
-
-	useRedis := false
 	configRedis, err := toConf.Get("redis")
 	if err != nil {
 		log.Println("could not determine redis config, not using")
@@ -72,40 +71,45 @@ func parseConf(toConf *system.ConfigMap) (*ApiConfig, error) {
 		if err != nil {
 			log.Println("could not parse redis config, not using")
 		} else {
-			useRedis = use
+			config.Redis = use
 		}
 	}
 
-	if !useRedis {
+	if !config.Redis {
 		return config, nil
 	}
 
-	redisHost, err := toConf.Get("redishost")
+	config.RedisHost, err = toConf.Get("redishost")
 	if err != nil {
 		return config, errors.New("could not determine redis host, aborting redis connection")
 	}
 
-	redisPassword, err := toConf.Get("redispass")
+	configPort, err = toConf.Get("redisport")
+	if err != nil {
+		return config, errors.New("could not determine redis port, aborting redis connection")
+	} else {
+		p, err := strconv.ParseUint(configPort, 10, 16)
+		if err != nil {
+			return config, errors.New("could not parse redis port, aborting redis connection")
+		} else {
+			config.RedisPort = uint16(p)
+		}
+	}
+
+	config.RedisPassword, err = toConf.Get("redispass")
 	if err != nil {
 		log.Println("Could not determine redis password, trying with none")
 	}
 
-	redisDB, err := toConf.Get("redisdb")
+	config.RedisDB, err = toConf.Get("redisdb")
 	if err != nil {
 		log.Println("Could not determine redis db, using 0")
-		redisDB = "0"
+		config.RedisDB = "0"
 	}
 
 	log.Println("Api finished parsing config")
 
-	return &ApiConfig{
-		Host:          host,
-		Port:          uint16(port),
-		Redis:         useRedis,
-		RedisHost:     redisHost,
-		RedisPassword: redisPassword,
-		RedisDB:       redisDB,
-	}, nil
+	return config, nil
 }
 
 func NewServer(config system.ConfigMap) *Server {
