@@ -15,7 +15,7 @@ func TestConfigLoad(t *testing.T) {
 	}
 	t.Logf("Config:\n%v", config.Sprint())
 	if val, ok := config.Get("TEsTSiMPLe"); ok {
-		if val != "test" {
+		if val.(string) != "test" {
 			t.Error("Config is not loaded correctly (level 1)")
 		}
 	} else {
