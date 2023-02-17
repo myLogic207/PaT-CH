@@ -32,7 +32,7 @@ func NewRouter(sessionCtl *SessionControl, cache sessions.Store) *gin.Engine {
 
 	router.Use(gin.LoggerWithConfig(gin.LoggerConfig{
 		Formatter: apiLogFormatter,
-		Output:    os.Stdout,
+		Output:    logger.Writer(),
 		SkipPaths: apiSkipPaths,
 	}))
 
@@ -80,6 +80,8 @@ func routeHealth(c *gin.Context) {
 	c.Status(http.StatusOK)
 }
 
+// Auth routes
+
 func RoutePass(c *gin.Context) {
 	session := sessions.Default(c)
 	if session.Get("id") == nil && c.Request.URL.Path != apiConnectURL {
@@ -87,6 +89,19 @@ func RoutePass(c *gin.Context) {
 			"message": "unauthorized",
 		})
 		c.Abort()
+	}
+}
+
+func Status(c *gin.Context) {
+	session := sessions.Default(c)
+	if session.Get("id") == nil {
+		c.JSON(http.StatusForbidden, gin.H{
+			"message": "disconnected",
+		})
+	} else {
+		c.JSON(http.StatusOK, gin.H{
+			"message": "connected",
+		})
 	}
 }
 
@@ -98,6 +113,7 @@ func GetID(c *gin.Context) {
 	})
 }
 
+// Middleware
 func apiLogFormatter(params gin.LogFormatterParams) string {
 	outLog := createLog(params)
 	out, err := json.Marshal(outLog)
