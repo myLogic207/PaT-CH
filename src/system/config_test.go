@@ -23,7 +23,7 @@ func TestConfigLoad(t *testing.T) {
 	}
 
 	if val, ok := config.Get("testMAP"); ok {
-		if val, ok := val.(ConfigMap).Get("test"); ok {
+		if val, ok := val.(*ConfigMap).Get("test"); ok {
 			if val != "abcde" {
 				t.Error("Config is not loaded correctly (level 3)")
 			}
