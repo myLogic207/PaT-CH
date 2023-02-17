@@ -50,7 +50,7 @@ func (s SessionControl) Connect(c *gin.Context) {
 	session.Set("id", id)
 	session.Save()
 	c.JSON(http.StatusOK, gin.H{
-		"message": "User Sign in successfully",
+		"message": "connected",
 		"id":      id,
 	})
 }
@@ -60,6 +60,6 @@ func (s SessionControl) Disonnect(c *gin.Context) {
 	session.Clear()
 	session.Save()
 	c.JSON(http.StatusOK, gin.H{
-		"message": "User Sign out successfully",
+		"message": "disconnected",
 	})
 }
