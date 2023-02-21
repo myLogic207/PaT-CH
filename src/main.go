@@ -6,7 +6,7 @@ import (
 
 	_ "github.com/joho/godotenv/autoload"
 	"github.com/mylogic207/PaT-CH/api"
-	"github.com/mylogic207/PaT-CH/cache"
+	"github.com/mylogic207/PaT-CH/storage/cache"
 	"github.com/mylogic207/PaT-CH/system"
 )
 
@@ -27,7 +27,7 @@ func main() {
 	}
 
 	redisConf := cache.DefaultConfig()
-	log.Println("Getting redis conf - using default in case of error") 
+	log.Println("Getting redis conf - using default in case of error")
 	if val, ok := config.Get("redis"); ok {
 		if cMap, ok := val.(*system.ConfigMap); ok {
 			var err error
