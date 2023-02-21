@@ -6,6 +6,7 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
+	"os"
 	"testing"
 	"time"
 
@@ -25,16 +26,17 @@ func startTestServer() *Server {
 		Redis: false,
 	})
 	s.Start()
-	time.Sleep(5 * time.Nanosecond)
+	time.Sleep(10 * time.Nanosecond)
 	return s
 }
 
-var TESTSERVER *Server
+var TESTSERVER *Server = startTestServer()
 
 func TestMain(m *testing.M) {
-	TESTSERVER = startTestServer()
-	m.Run()
+	exit := m.Run()
+	time.Sleep(10 * time.Nanosecond)
 	TESTSERVER.Stop()
+	os.Exit(exit)
 }
 
 func TestIndependent(t *testing.T) {
@@ -64,7 +66,6 @@ func TestServer(t *testing.T) {
 		t.Errorf("Expected 200, got %d", resp.StatusCode)
 	}
 	t.Log("Status Successful")
-	TESTSERVER.Stop()
 }
 
 func TestSessionNonAuth(t *testing.T) {
@@ -72,12 +73,13 @@ func TestSessionNonAuth(t *testing.T) {
 	resp, err := http.DefaultClient.Get(TESTSERVER.Addr("/api/v1/auth/session"))
 	if err != nil {
 		t.Error(err)
+		return
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusForbidden {
 		t.Errorf("Expected 403, got %d", resp.StatusCode)
 	}
-	TESTSERVER.Stop()
+	t.Log("Status Successful")
 }
 
 type SessionResponse struct {

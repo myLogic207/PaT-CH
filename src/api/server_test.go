@@ -23,6 +23,7 @@ func TestNewServer(t *testing.T) {
 	err := server.Stop()
 	if err != nil {
 		t.Error(err)
+		return
 	}
 	fmt.Println("Stopping finished")
 	t.Log("Server stopped successfully")

@@ -230,12 +230,12 @@ func (s *Server) Stop() error {
 	if !s.running {
 		return errors.New("server not running")
 	}
-	fmt.Println("Stopping server not running")
 	if err := s.server.Shutdown(s.ctx); err != nil {
 		return err
 	}
 	s.serverWg.Wait()
 	s.running = false
+	log.Println("Server stopped")
 	return nil
 }
 
