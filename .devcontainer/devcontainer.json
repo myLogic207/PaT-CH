@@ -1,0 +1,11 @@
+{
+    "name": "patch-container-01",
+    "image": "mcr.microsoft.com/devcontainers/universal:2",
+    "features": {
+        "ghcr.io/devcontainers/features/go:1": {
+            "version": "latest"
+        },
+        "ghcr.io/devcontainers-contrib/features/homebrew-package:1": {},
+        "ghcr.io/devcontainers-contrib/features/redis-homebrew:1": {}
+    }
+}
