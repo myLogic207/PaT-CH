@@ -26,6 +26,18 @@ type RedisConfig struct {
 	// Addr     func() string
 }
 
+func DefaultConfig() *RedisConfig {
+	return &RedisConfig{
+		Host:       "localhost",
+		Port:       6379,
+		Password:   "",
+		DB:         1,
+		Idle:       10,
+		MaxActive:  100,
+		TimeoutSec: 60,
+	}
+}
+
 func (c RedisConfig) Addr() string {
 	return c.Host + ":" + fmt.Sprint(c.Port)
 }

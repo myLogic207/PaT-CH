@@ -31,6 +31,17 @@ type ApiConfig struct {
 	RedisDB       string `json:"redis_db"`
 }
 
+func DefaultConfig() *ApiConfig {
+	return &ApiConfig{
+		Host:          "localhost",
+		Port:          2070,
+		Secure:        false,
+		CertFile:      "",
+		KeyFile:       "",
+		Redis:         false,
+	}
+}
+
 func (c *ApiConfig) Addr() string {
 	return c.Host + ":" + fmt.Sprint(c.Port)
 }
