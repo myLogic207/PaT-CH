@@ -5,7 +5,6 @@
         "ghcr.io/devcontainers/features/go:1": {
             "version": "latest"
         },
-        "ghcr.io/devcontainers-contrib/features/homebrew-package:1": {},
-        "ghcr.io/devcontainers-contrib/features/redis-homebrew:1": {}
+        "ghcr.io/warrenbuckley/codespace-features/sqlite:1": {}
     }
 }
