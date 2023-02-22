@@ -84,14 +84,23 @@ func (c *Config) Set(field string, value interface{}) error {
 	if _, ok := c.cmpx[strings.ToLower(field)]; ok || c.drct[strings.ToLower(field)] != "" {
 		return fmt.Errorf("Config field not empty: %s", field)
 	}
+	if value == nil {
+		return fmt.Errorf("Config field cannot be nil: %s", field)
+	}
 	c.Lock()
 	defer c.Unlock()
-	if val, ok := value.(string); ok {
-		log.Printf("Setting conf  string: %s = %s", field, val)
-		c.drct[strings.ToLower(field)] = val
-		return nil
+	switch valT := value.(type) {
+	case int:
+		c.drct[strings.ToLower(field)] = fmt.Sprintf("%d", valT)
+	case bool:
+		c.drct[strings.ToLower(field)] = fmt.Sprintf("%t", valT)
+	case string:
+		c.drct[strings.ToLower(field)] = valT
+	case *ConfigMap:
+		c.cmpx[strings.ToLower(field)] = valT
+	default:
+		return fmt.Errorf("Config field type not supported: %s", field)
 	}
-	c.cmpx[strings.ToLower(field)] = value.(*ConfigMap)
 	return nil
 }
 
