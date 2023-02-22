@@ -29,7 +29,6 @@ go.work
 .history
 .env
 
-data
 logs
 dump.rdb
 redis.conf
