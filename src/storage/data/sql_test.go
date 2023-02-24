@@ -2,6 +2,7 @@ package data
 
 import (
 	"context"
+	"errors"
 	"testing"
 )
 
@@ -26,7 +27,7 @@ func TestMain(m *testing.M) {
 	m.Run()
 }
 
-func TestInsertGet(t *testing.T) {
+func TestEverything(t *testing.T) {
 	if err := TESTDB.CreateTable(ctx, "test", []DBfields{
 		{"testKey", "text", 0, "PRIMARY KEY"},
 		{"testValue", "text", 0, ""},
@@ -35,6 +36,7 @@ func TestInsertGet(t *testing.T) {
 		t.Error("error creating table: ", err)
 		t.FailNow()
 	}
+	t.Log("created table")
 	testDataSet := [][]interface{}{
 		{"testK1", "testV1", "testD1"},
 		{"testK2", "testV3", "testD4"},
@@ -46,13 +48,37 @@ func TestInsertGet(t *testing.T) {
 		t.FailNow()
 	}
 	t.Log("inserted data")
-
-	if val, err := TESTDB.Select(ctx, "test", []string{"testKey", "TestData"}, map[string]interface{}{"testKey": "testK3"}, ""); err == nil {
-		t.Log(val)
+	wm := NewWhereMap(map[DBField]interface{}{"testKey": "testK3"})
+	if val, err := TESTDB.Select(ctx, "test", []DBField{"testKey", "TestData"}, wm, ""); err == nil {
+		for _, v := range val {
+			t.Log("row: ", v)
+		}
 	} else {
 		t.Error("error getting values back from table: ", err)
 		t.FailNow()
 	}
+	t.Log("got data back")
+	if err := TESTDB.DeleteTable(ctx, "test"); err == nil {
+		t.Error("error: deleted full table")
+		t.FailNow()
+	} else if errors.Is(err, ErrTableNotEmpty) {
+		t.Log("ok: table not empty")
+	} else {
+		t.Error("error: unexpected error: ", err)
+		t.FailNow()
+	}
+	// clear table
+	if err := TESTDB.Delete(ctx, "test", nil); err != nil {
+		t.Error("error deleting from table: ", err)
+		t.FailNow()
+	}
+	t.Log("cleared table")
+	if err := TESTDB.DeleteTable(ctx, "test"); err != nil {
+		t.Error("error deleting table: ", err)
+		t.FailNow()
+	}
+	t.Log("deleted table")
+	t.Log("test complete")
 }
 
 func TestTable(t *testing.T) {
