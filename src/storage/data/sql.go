@@ -5,16 +5,19 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-var logger = log.New(log.Writer(), "data: ", log.Flags())
-
-var ErrTableNotEmpty = errors.New("table is not empty")
+var (
+	logger           = log.New(log.Writer(), "data: ", log.Flags())
+	ErrTableNotEmpty = errors.New("table is not empty")
+)
 
 type DataConfig struct {
 	host     string
@@ -55,7 +58,7 @@ func (c *DataConfig) ConnString() string {
 	return fmt.Sprintf("postgresql://%s:%s@%s:%d/%s?sslmode=%s", c.user, c.password, c.host, c.port, c.dbname, c.sslmode)
 }
 
-type DBField string
+type FieldName string
 type DBValue interface {
 	string | int | float64 | bool | []byte | time.Time | any
 }
@@ -63,7 +66,7 @@ type DBValue interface {
 type DBResult []map[string]interface{}
 
 type WhereMap struct {
-	clauses map[DBField]any
+	clauses map[FieldName]any
 }
 
 func (m *WhereMap) String() string {
@@ -72,41 +75,41 @@ func (m *WhereMap) String() string {
 	}
 	if len(m.clauses) == 1 {
 		for k, v := range m.clauses {
-			return fmt.Sprintf("%s = '%s'", k, v)
+			return fmt.Sprintf("%s = '%s'", strings.ToLower(string(k)), v)
 		}
 	}
 	sb := strings.Builder{}
 	counter := 0
 	for k, v := range m.clauses {
-		sb.WriteString(fmt.Sprintf("%s = '%s' AND", k, v))
+		sb.WriteString(fmt.Sprintf("%s = '%s' AND", strings.ToLower(string(k)), v))
 		counter++
 	}
 	return sb.String()
 }
 
-func NewWhereMap(rawMap map[DBField]interface{}) *WhereMap {
+func NewWhereMap(rawMap map[FieldName]interface{}) *WhereMap {
 	return &WhereMap{
 		clauses: rawMap,
 	}
 }
 
-func (m *WhereMap) Set(field DBField, value DBValue) {
+func (m *WhereMap) Set(field FieldName, value DBValue) {
 	if m.clauses == nil {
-		m.clauses = make(map[DBField]any)
+		m.clauses = make(map[FieldName]any)
 	}
 	m.clauses[field] = value
 }
 
-type DBfields struct {
-	name       string
+type DBField struct {
+	name       FieldName
 	typ        string
 	len        int    // optional
 	constraint string // optional
 }
 
-func (f *DBfields) String() string {
+func (f *DBField) String() string {
 	sb := strings.Builder{}
-	sb.WriteString(strings.ToLower(f.name))
+	sb.WriteString(strings.ToLower(string(f.name)))
 	sb.WriteString(" ")
 	sb.WriteString(f.typ)
 	if f.len > 0 {
@@ -124,8 +127,6 @@ type DataBase struct {
 	context context.Context
 	config  *DataConfig
 }
-
-type DBFunction func(ctx context.Context, tx pgx.Tx, table string, fields []DBField, whereMap *WhereMap, args string) (DBResult, error)
 
 func NewDataBase(config *DataConfig, ctx context.Context) (*DataBase, error) {
 	if err := config.init(); err != nil {
@@ -147,11 +148,12 @@ func NewDataBase(config *DataConfig, ctx context.Context) (*DataBase, error) {
 		return nil, err
 	}
 	logger.Println("connected to database")
-	return &DataBase{
+	dbConn := &DataBase{
 		pool:    db,
 		config:  config,
 		context: ctx,
-	}, nil
+	}
+	return dbConn, nil
 }
 
 func (db *DataBase) Disconnect() error {
@@ -164,49 +166,21 @@ func (db *DataBase) Init() error {
 	return nil
 }
 
-func buildCreate(table string, fields []DBfields) string {
-	sb := strings.Builder{}
-	sb.WriteString("CREATE TABLE IF NOT EXISTS ")
-	sb.WriteString(table)
-	sb.WriteString(" (")
-	for i, f := range fields {
-		sb.WriteString(f.String())
-		if i < len(fields)-1 {
-			sb.WriteString(", ")
-		}
-	}
-	sb.WriteString(");")
-	return sb.String()
-}
-
-func (db *DataBase) CreateTable(ctx context.Context, table string, fields []DBfields) error {
+// DBFunction
+func (db *DataBase) CreateTable(ctx context.Context, table string, fields []DBField) error {
 	logger.Println("creating table: ", table)
-	tx, err := db.pool.Begin(ctx)
+	_, err := db.transactionWrapper(ctx, CREATE, table, fields)
 	if err != nil {
-		return err
-	}
-	createQuery := buildCreate(table, fields)
-	_, err = tx.Exec(ctx, createQuery)
-	if err != nil {
-		logger.Println("error creating table: ", err)
-		tx.Rollback(ctx)
-		return err
-	}
-	err = tx.Commit(ctx)
-	if err != nil {
-		logger.Println("error committing transaction: ", err)
-		return err
+		logger.Println(err)
+		return errors.New("error creating table: " + table)
 	}
 	return nil
 }
 
 func (db *DataBase) DeleteTable(ctx context.Context, table string) error {
 	logger.Println("deleting table: ", table)
-	tx, err := db.pool.Begin(ctx)
-	if err != nil {
-		return err
-	}
 
+	// selecting to check if table is empty
 	row, err := db.Select(ctx, table, nil, nil, "LIMIT 1")
 	if err != nil {
 		logger.Println("error proof-selecting from table: ", err)
@@ -215,141 +189,139 @@ func (db *DataBase) DeleteTable(ctx context.Context, table string) error {
 	if len(row) > 0 {
 		return ErrTableNotEmpty
 	}
-	err = db.dropTable(ctx, tx, table)
+
+	_, err = db.transactionWrapper(ctx, DROP, table)
 	if err != nil {
-		tx.Rollback(ctx)
-		return err
-	}
-	err = tx.Commit(ctx)
-	if err != nil {
-		logger.Println("error committing transaction: ", err)
-		return err
+		logger.Println(err)
+		return errors.New("error deleting table: " + table)
 	}
 	return nil
 }
 
-func (db *DataBase) dropTable(ctx context.Context, transaction pgx.Tx, table string) error {
-	logger.Println("warn: dropping table: ", table)
-	tx, err := transaction.Begin(ctx)
+func (db *DataBase) Select(ctx context.Context, table string, fields []FieldName, wm *WhereMap, args string) (DBResult, error) {
+	logger.Println("selecting from table: ", table)
+	result, err := db.transactionWrapper(ctx, SELECT, table, fields, wm, args)
 	if err != nil {
-		return err
+		logger.Println(err)
+		return nil, errors.New("error selecting from table: " + table)
 	}
-	_, err = tx.Exec(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s", table))
-	if err != nil {
-		err := tx.Rollback(ctx)
-		if err != nil {
-			logger.Println("error rolling back transaction: ", err)
-		}
-		return err
-	}
-	err = tx.Commit(ctx)
-	if err != nil {
-		logger.Println("error committing transaction: ", err)
-		return err
-	}
-	return nil
+	fmt.Printf("got data: %+v\n", result)
+	return result, nil
 }
 
-func (db *DataBase) Insert(ctx context.Context, table string, fields []string, values [][]interface{}) error {
+func (db *DataBase) Insert(ctx context.Context, table string, fields []FieldName, values [][]interface{}) error {
 	logger.Println("inserting into table: ", table)
 	for _, v := range values {
 		if len(v) != len(fields) {
 			logger.Println("warning: number of values does not match number of fields: ", values[0])
 		}
 	}
+	_, err := db.transactionWrapper(ctx, INSERT, table, fields, values)
+	if err != nil {
+		logger.Println(err)
+		return errors.New("error inserting into table: " + table)
+	}
+	return nil
+}
+
+func (db *DataBase) Update(ctx context.Context, table string, updates map[FieldName]DBValue, wm *WhereMap) error {
+	logger.Println("updating table: ", table)
+	_, err := db.transactionWrapper(ctx, UPDATE, table, updates, wm)
+	if err != nil {
+		return err
+	}
+	logger.Println("updated successfully")
+	return nil
+}
+
+func (db *DataBase) Delete(ctx context.Context, table string, wm *WhereMap) error {
+	logger.Println("deleting from table: ", table)
+	_, err := db.transactionWrapper(ctx, DELETE, table, wm)
+	if err != nil {
+		return err
+	}
+	logger.Println("deleted successfully")
+	return nil
+}
+
+// transactionWrappers
+type DBMethod string
+
+const (
+	INSERT DBMethod = "INSERT"
+	SELECT DBMethod = "SELECT"
+	UPDATE DBMethod = "UPDATE"
+	DELETE DBMethod = "DELETE"
+	CREATE DBMethod = "CREATETABLE"
+	DROP   DBMethod = "DROPTABLE"
+)
+
+// agrs are: table string, fields []DBField, wm *WhereMap, args string, etc.
+// should be wrapped -> transactionWrapperWrappers
+func (db *DataBase) transactionWrapper(ctx context.Context, dbFunction DBMethod, table string, args ...any) (DBResult, error) {
+	logger.Printf("wrapping %s transaction", dbFunction)
+	parsedArgs, err := parseArgs(dbFunction, args)
+	if err != nil {
+		logger.Println(err)
+		if !errors.Is(err, ErrNoArgs) {
+			return nil, errors.New("error parsing arguments")
+		}
+		logger.Println("no arguments passed")
+	}
+	query, err := db.buildQuery(dbFunction, table, parsedArgs)
+	if err != nil {
+		logger.Println(err)
+		return nil, errors.New("error building query")
+	}
+	if os.Getenv("ENVIROMENT") == "development" {
+		logger.Printf("query: %s", query)
+	}
 	tx, err := db.pool.Begin(ctx)
 	if err != nil {
-		return err
+		logger.Println(err)
+		return nil, errors.New("error starting transaction")
 	}
-	err = db.insert(ctx, tx, table, fields, values)
+	var tag pgconn.CommandTag
+	var rows DBResult
+	switch dbFunction {
+	case SELECT:
+		logger.Println("getting data")
+		rows, err = db.getData(ctx, tx, query)
+	case INSERT:
+		logger.Println("inserting data")
+		err = db.insert(ctx, tx, table, parsedArgs.fields, parsedArgs.values)
+	default:
+		tag, err = tx.Exec(ctx, query)
+		logger.Printf("executed query: %s", query)
+		logger.Printf("command tag: %s", tag)
+	}
 	if err != nil {
-		logger.Printf("error inserting into table: %s\nrolling back\n", err)
-		err := tx.Rollback(ctx)
-		if err != nil {
-			logger.Println("error rolling back transaction: ", err)
+		logger.Printf("error acting on table, rolling back;\n%s", err)
+		if e := tx.Rollback(ctx); e != nil {
+			logger.Println("error rolling back transaction: ", e)
+			return nil, e
 		}
-		return err
-	}
-	err = tx.Commit(ctx)
-	errors.Is(err, pgx.ErrTxCommitRollback)
-	if err != nil {
-		logger.Println("error committing transaction: ", err)
-		return err
-	}
-	return nil
-}
-
-func (db *DataBase) insert(ctx context.Context, tx pgx.Tx, table string, fields []string, values [][]interface{}) error {
-	for i, v := range fields {
-		fields[i] = strings.ToLower(v)
-	}
-	copyCount, err := tx.CopyFrom(
-		ctx,
-		pgx.Identifier{table},
-		fields,
-		pgx.CopyFromRows(values),
-	)
-	if err != nil {
-		return err
-	}
-	logger.Printf("inserted %d rows into %s", copyCount, table)
-	return nil
-}
-
-func (db *DataBase) buildSelect(table string, fields []DBField, wm *WhereMap, args string) string {
-	sb := strings.Builder{}
-	sb.WriteString("SELECT ")
-	if len(fields) == 0 {
-		sb.WriteString("*")
-	} else if len(fields) == 1 {
-		sb.WriteString(string(fields[0]))
-	} else {
-		sb.WriteString(join(fields, ", "))
-	}
-	sb.WriteString(fmt.Sprintf(" FROM %s", table))
-	if wm != nil {
-		sb.WriteString(" WHERE ")
-		sb.WriteString(wm.String())
-	}
-	if args != "" {
-		sb.WriteString(fmt.Sprintf(" %s", args))
-	}
-	sb.WriteString(";")
-	return sb.String()
-}
-
-func (db *DataBase) Select(ctx context.Context, table string, fields []DBField, wm *WhereMap, args string) (DBResult, error) {
-	logger.Println("selecting from table: ", table)
-	tx, err := db.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.ReadCommitted, AccessMode: pgx.ReadOnly, DeferrableMode: pgx.NotDeferrable})
-	if err != nil {
 		return nil, err
 	}
-	result, err := db.getData(tx, ctx, table, fields, wm, args)
-	if err != nil {
-		tx.Rollback(ctx)
-		return nil, err
-	}
-	err = tx.Commit(ctx)
-	if err != nil {
+	if err = tx.Commit(ctx); err != nil {
 		logger.Println("error committing transaction: ", err)
 		return nil, err
 	}
-	fmt.Printf("got data: %+v\n", result)
-	return result, nil
+	logger.Println("transaction committed")
+	return rows, nil
 }
 
-func (db *DataBase) getData(tx pgx.Tx, ctx context.Context, table string, fields []DBField, wm *WhereMap, args string) (DBResult, error) {
-	queryString := db.buildSelect(table, fields, wm, args)
-	rows, err := tx.Query(ctx, queryString)
+func (db *DataBase) getData(ctx context.Context, tx pgx.Tx, query string) (DBResult, error) {
+	rows, err := tx.Query(ctx, query)
 	if err != nil {
 		return nil, err
 	}
-	// There might be a way to parse/Marhsal into a struct
+
 	dbFields := rows.FieldDescriptions()
 	defer rows.Close()
 	result := make([]map[string]interface{}, 0)
 	for rows.Next() {
-		row := make(map[string]interface{}, len(fields))
+		row := make(map[string]interface{}, len(dbFields))
 		val, err := rows.Values()
 		if err != nil {
 			return nil, err
@@ -362,60 +334,188 @@ func (db *DataBase) getData(tx pgx.Tx, ctx context.Context, table string, fields
 	return result, nil
 }
 
-func (db *DataBase) transactionWrapper(ctx context.Context, dbFunction DBFunction, table string, fields []DBField, wm *WhereMap, args string) (DBResult, error) {
-	logger.Println("wrapping transaction")
-	tx, err := db.pool.Begin(ctx)
-	if err != nil {
-		return nil, err
+func (db *DataBase) insert(ctx context.Context, tx pgx.Tx, table string, fields []FieldName, values [][]interface{}) error {
+	dbFields := make([]string, len(fields))
+	for i, v := range fields {
+		dbFields[i] = strings.ToLower(string(v))
 	}
-	val, err := dbFunction(ctx, tx, table, fields, wm, args)
-	if err != nil {
-		logger.Printf("error acting on table: %s\nrolling back\n", err)
-		err := tx.Rollback(ctx)
-		if err != nil {
-			logger.Println("error rolling back transaction: ", err)
-		}
-		return nil, err
-	}
-	err = tx.Commit(ctx)
-	if err != nil {
-		logger.Println("error committing transaction: ", err)
-		return nil, err
-	}
-	return val, nil
-}
-
-func (db *DataBase) Delete(ctx context.Context, table string, wm *WhereMap) error {
-	logger.Println("deleting from table: ", table)
-	_, err := db.transactionWrapper(ctx, db.delete, table, nil, wm, "")
+	copyCount, err := tx.CopyFrom(
+		ctx,
+		pgx.Identifier{table},
+		dbFields,
+		pgx.CopyFromRows(values),
+	)
 	if err != nil {
 		return err
 	}
-	logger.Println("deleted successfully")
+	if copyCount != int64(len(values)) {
+		return errors.New("error inserting all values into table: " + table)
+	}
+	logger.Printf("inserted %d rows into %s", copyCount, table)
 	return nil
 }
 
-func (db *DataBase) delete(ctx context.Context, tx pgx.Tx, table string, fields []DBField, wm *WhereMap, args string) (DBResult, error) {
-	queryString := db.buildDelete(table, fields, wm, args)
-	logger.Println("deleting with query: ", queryString)
-	_, err := tx.Exec(ctx, queryString)
-	if err != nil {
-		return nil, err
-	}
-	return nil, nil
+// query builder
+type QueryArgs struct {
+	fields    []FieldName
+	newFields []DBField
+	wm        *WhereMap
+	args      string
+	updates   map[FieldName]DBValue
+	values    [][]interface{}
 }
 
-func (db *DataBase) buildDelete(table string, fields []DBField, wm *WhereMap, args string) string {
+func (db *DataBase) buildQuery(dbFunction DBMethod, table string, args *QueryArgs) (string, error) {
 	sb := strings.Builder{}
-	sb.WriteString("DELETE FROM ")
-	sb.WriteString(table)
-	if wm != nil {
-		sb.WriteString(" WHERE ")
-		sb.WriteString(wm.String())
+	switch dbFunction {
+	case CREATE:
+		return fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (%s);", strings.ToLower(table), buildCreate(args.newFields)), nil
+	case DROP:
+		return fmt.Sprintf("DROP TABLE IF EXISTS %s;", table), nil
+	case DELETE:
+		sb.WriteString(fmt.Sprintf("DELETE FROM %s ", table))
+		if args.wm != nil {
+			sb.WriteString(args.wm.String())
+		}
+	case SELECT:
+		sb.WriteString("SELECT ")
+		if len(args.fields) == 0 {
+			sb.WriteString("*")
+		} else {
+			for i, v := range args.fields {
+				sb.WriteString(strings.ToLower(string(v)))
+				if i != len(args.fields)-1 {
+					sb.WriteString(", ")
+				}
+			}
+		}
+		sb.WriteString(fmt.Sprintf(" FROM %s ", table))
+		if args.wm != nil {
+			sb.WriteString("WHERE ")
+			sb.WriteString(args.wm.String())
+		}
+		if args.args != "" {
+			sb.WriteString(args.args)
+		}
+	case UPDATE:
+		sb.WriteString(fmt.Sprintf("UPDATE %s SET ", table))
+		sb.WriteString(buildUpdate(args.updates))
+		if args.wm != nil {
+			sb.WriteString(" WHERE ")
+			sb.WriteString(args.wm.String())
+		}
+	case INSERT:
+		return "", nil
 	}
 	sb.WriteString(";")
+	return sb.String(), nil
+}
+
+var (
+	ErrInvalidField    = errors.New("invalid field type")
+	ErrNoArgs          = errors.New("no arguments provided")
+	ErrInvalidArg      = errors.New("invalid argument type")
+	ErrInvalidFunction = errors.New("invalid db function type")
+)
+
+func parseArgs(dbFunction DBMethod, args []any) (*QueryArgs, error) {
+	logger.Println("parsing args")
+	if len(args) == 0 {
+		return nil, ErrNoArgs
+	}
+
+	switch dbFunction {
+	case UPDATE:
+		// INSERT INTO table (fields) VALUES (values)
+		updates, uOk := args[0].(map[FieldName]DBValue)
+		wm, wOk := args[1].(*WhereMap)
+		if !uOk || !wOk {
+			return nil, ErrInvalidArg
+		}
+		return &QueryArgs{
+			updates: updates,
+			wm:      wm,
+		}, nil
+	case CREATE:
+		// CREATE TABLE IF NOT EXISTS table (fields)
+		if val, ok := args[0].([]DBField); ok {
+			return &QueryArgs{
+				newFields: val,
+			}, nil
+		}
+		return nil, ErrInvalidArg
+	case DROP:
+		// DROP TABLE IF EXISTS table
+		return nil, nil
+	case DELETE:
+		// DELETE FROM table WHERE statements
+		if val, ok := args[0].(*WhereMap); ok {
+			return &QueryArgs{
+				wm: val,
+			}, nil
+		}
+		return nil, nil
+	case SELECT:
+		// SELECT fields FROM table WHERE statements PARAMS
+		fields, fOk := args[0].([]FieldName)
+		wm, wOk := args[1].(*WhereMap)
+		if !fOk || !wOk {
+			return nil, ErrInvalidArg
+		}
+		if len(args) > 2 {
+			if val, ok := args[2].(string); ok {
+				return &QueryArgs{
+					fields: fields,
+					wm:     wm,
+					args:   val,
+				}, nil
+			}
+		}
+		return &QueryArgs{
+			fields: fields,
+			wm:     wm,
+		}, nil
+	case INSERT:
+		// Insert is done via COPY
+		fields, fOk := args[0].([]FieldName)
+		values, vOk := args[1].([][]interface{})
+		if !fOk || !vOk {
+			return nil, ErrInvalidArg
+		}
+		return &QueryArgs{
+			fields: fields,
+			values: values,
+		}, nil
+
+	}
+	return nil, ErrInvalidFunction
+}
+
+func buildCreate(fields []DBField) string {
+	if len(fields) == 1 {
+		return fields[0].String()
+	}
+	sb := strings.Builder{}
+	for i, f := range fields {
+		sb.WriteString(f.String())
+		if i < len(fields)-1 {
+			sb.WriteString(", ")
+		}
+	}
 	return sb.String()
 }
+
+func buildUpdate(values map[FieldName]DBValue) string {
+	buffer := make([]string, len(values))
+	counter := 0
+	for k, v := range values {
+		buffer[counter] = fmt.Sprintf("%s = '%s'", strings.ToLower(string(k)), v)
+		counter++
+	}
+	return join(buffer, ", ")
+}
+
+// helper
 
 func join[K any](a []K, sep string) string {
 	sb := strings.Builder{}
