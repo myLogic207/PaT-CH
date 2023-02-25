@@ -19,108 +19,23 @@ var (
 	ErrTableNotEmpty = errors.New("table is not empty")
 )
 
-type DataConfig struct {
-	host     string
-	port     uint16
-	user     string
-	password string
-	dbname   string
-	sslmode  string
-}
+const (
+	INSERT DBMethod = "INSERT"
+	SELECT DBMethod = "SELECT"
+	UPDATE DBMethod = "UPDATE"
+	DELETE DBMethod = "DELETE"
+	CREATE DBMethod = "CREATETABLE"
+	DROP   DBMethod = "DROPTABLE"
+)
 
-func DefaultConfig() *DataConfig {
-	return &DataConfig{
-		host:     "localhost",
-		port:     5432,
-		user:     "postgres",
-		password: "",
-		dbname:   "patch_db",
+type (
+	FieldName string
+	DBMethod  string
+	DBResult  []map[string]interface{}
+	DBValue   interface {
+		string | int | float64 | bool | []byte | time.Time | any
 	}
-}
-
-func (c *DataConfig) init() error {
-	if c.host == "" {
-		c.host = "localhost"
-	}
-	if c.port == 0 {
-		c.port = 5432
-	}
-	if c.user == "" {
-		c.user = "postgres"
-	}
-	if c.dbname == "" {
-		c.dbname = "patch_db"
-	}
-	return nil
-}
-
-func (c *DataConfig) ConnString() string {
-	return fmt.Sprintf("postgresql://%s:%s@%s:%d/%s?sslmode=%s", c.user, c.password, c.host, c.port, c.dbname, c.sslmode)
-}
-
-type FieldName string
-type DBValue interface {
-	string | int | float64 | bool | []byte | time.Time | any
-}
-
-type DBResult []map[string]interface{}
-
-type WhereMap struct {
-	clauses map[FieldName]any
-}
-
-func (m *WhereMap) String() string {
-	if len(m.clauses) < 1 {
-		return ""
-	}
-	if len(m.clauses) == 1 {
-		for k, v := range m.clauses {
-			return fmt.Sprintf("%s = '%s'", strings.ToLower(string(k)), v)
-		}
-	}
-	sb := strings.Builder{}
-	counter := 0
-	for k, v := range m.clauses {
-		sb.WriteString(fmt.Sprintf("%s = '%s' AND", strings.ToLower(string(k)), v))
-		counter++
-	}
-	return sb.String()
-}
-
-func NewWhereMap(rawMap map[FieldName]interface{}) *WhereMap {
-	return &WhereMap{
-		clauses: rawMap,
-	}
-}
-
-func (m *WhereMap) Set(field FieldName, value DBValue) {
-	if m.clauses == nil {
-		m.clauses = make(map[FieldName]any)
-	}
-	m.clauses[field] = value
-}
-
-type DBField struct {
-	name       FieldName
-	typ        string
-	len        int    // optional
-	constraint string // optional
-}
-
-func (f *DBField) String() string {
-	sb := strings.Builder{}
-	sb.WriteString(strings.ToLower(string(f.name)))
-	sb.WriteString(" ")
-	sb.WriteString(f.typ)
-	if f.len > 0 {
-		sb.WriteString(fmt.Sprintf("(%d)", f.len))
-	}
-	if f.constraint != "" {
-		sb.WriteString(" ")
-		sb.WriteString(f.constraint)
-	}
-	return sb.String()
-}
+)
 
 type DataBase struct {
 	pool    *pgxpool.Pool
@@ -244,20 +159,7 @@ func (db *DataBase) Delete(ctx context.Context, table string, wm *WhereMap) erro
 	return nil
 }
 
-// transactionWrappers
-type DBMethod string
-
-const (
-	INSERT DBMethod = "INSERT"
-	SELECT DBMethod = "SELECT"
-	UPDATE DBMethod = "UPDATE"
-	DELETE DBMethod = "DELETE"
-	CREATE DBMethod = "CREATETABLE"
-	DROP   DBMethod = "DROPTABLE"
-)
-
-// agrs are: table string, fields []DBField, wm *WhereMap, args string, etc.
-// should be wrapped -> transactionWrapperWrappers
+// transactionWrapper
 func (db *DataBase) transactionWrapper(ctx context.Context, dbFunction DBMethod, table string, args ...any) (DBResult, error) {
 	logger.Printf("wrapping %s transaction", dbFunction)
 	parsedArgs, err := parseArgs(dbFunction, args)
@@ -268,7 +170,7 @@ func (db *DataBase) transactionWrapper(ctx context.Context, dbFunction DBMethod,
 		}
 		logger.Println("no arguments passed")
 	}
-	query, err := db.buildQuery(dbFunction, table, parsedArgs)
+	query, err := buildQuery(dbFunction, table, parsedArgs)
 	if err != nil {
 		logger.Println(err)
 		return nil, errors.New("error building query")
@@ -365,7 +267,9 @@ type QueryArgs struct {
 	values    [][]interface{}
 }
 
-func (db *DataBase) buildQuery(dbFunction DBMethod, table string, args *QueryArgs) (string, error) {
+// Argument parser and query builder
+
+func buildQuery(dbFunction DBMethod, table string, args *QueryArgs) (string, error) {
 	sb := strings.Builder{}
 	switch dbFunction {
 	case CREATE:
