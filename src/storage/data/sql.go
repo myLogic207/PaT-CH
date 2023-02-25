@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/mylogic207/PaT-CH/system"
 )
 
 var (
@@ -43,7 +44,15 @@ type DataBase struct {
 	config  *DataConfig
 }
 
-func NewDataBase(config *DataConfig, ctx context.Context) (*DataBase, error) {
+func NewConnector(config *system.ConfigMap, ctx context.Context) (*DataBase, error) {
+	conf, err := parseConfig(config)
+	if err != nil {
+		return nil, err
+	}
+	return NewConnectorWithConf(conf, ctx)
+}
+
+func NewConnectorWithConf(config *DataConfig, ctx context.Context) (*DataBase, error) {
 	if err := config.init(); err != nil {
 		return nil, err
 	}

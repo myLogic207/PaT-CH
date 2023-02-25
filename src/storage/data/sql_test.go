@@ -21,7 +21,7 @@ func TestMain(m *testing.M) {
 		dbname:   "patch_db_test",
 		sslmode:  "verify-full",
 	}
-	db, err := NewDataBase(config, ctx)
+	db, err := NewConnectorWithConf(config, ctx)
 	if err != nil {
 		panic(err)
 	}

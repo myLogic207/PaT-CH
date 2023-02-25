@@ -20,11 +20,14 @@ func randomOffset() uint16 {
 func startTestServer() *Server {
 	log.Println("Starting Test Server")
 	gin.SetMode(gin.ReleaseMode)
-	s := NewServer(&ApiConfig{
+	s, err := NewServerWithConf(&ApiConfig{
 		Host:  "127.0.0.1",
 		Port:  2070 + randomOffset(),
 		Redis: false,
 	})
+	if err != nil {
+		panic(err)
+	}
 	s.Start()
 	time.Sleep(10 * time.Nanosecond)
 	return s
@@ -42,11 +45,15 @@ func TestMain(m *testing.M) {
 func TestIndependent(t *testing.T) {
 	t.Log("Testing Server Start")
 
-	server := NewServer(&ApiConfig{
+	server, err := NewServerWithConf(&ApiConfig{
 		Host:  "localhost",
 		Port:  3070 + randomOffset(),
 		Redis: false,
 	})
+	if err != nil {
+		t.Error(err)
+		t.FailNow()
+	}
 	server.Start()
 	time.Sleep(time.Duration(100))
 	server.Stop()

@@ -7,7 +7,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"strconv"
 	"sync"
 
 	"github.com/gin-contrib/sessions/cookie"
@@ -16,72 +15,11 @@ import (
 	"github.com/mylogic207/PaT-CH/system"
 )
 
+const serverAddrKey keyServerAddr = "serverAddr"
+
 var logger = log.New(log.Writer(), "api: ", log.Flags())
 
-type ApiConfig struct {
-	Host          string `json:"host"`
-	Port          uint16 `json:"port"`
-	Secure        bool   `json:"secure"`
-	CertFile      string `json:"cert_file"` // only used if secure is true
-	KeyFile       string `json:"key_file"`  // only used if secure is true
-	Redis         bool   `json:"redis"`
-	RedisHost     string `json:"redis_host"`
-	RedisPort     uint16 `json:"redis_port"`
-	RedisPassword string `json:"redis_password"`
-	RedisDB       string `json:"redis_db"`
-}
-
-func DefaultConfig() *ApiConfig {
-	return &ApiConfig{
-		Host:          "localhost",
-		Port:          2070,
-		Secure:        false,
-		CertFile:      "",
-		KeyFile:       "",
-		Redis:         false,
-	}
-}
-
-func (c *ApiConfig) Addr() string {
-	return c.Host + ":" + fmt.Sprint(c.Port)
-}
-
-func (c *ApiConfig) init() error {
-	if c.Host == "" {
-		c.Host = "localhost"
-		logger.Println("could not determine host, using localhost")
-	}
-	if c.Port == 0 {
-		c.Port = 2070
-		logger.Println("could not determine port, using default")
-	}
-	if c.Secure {
-		if c.CertFile == "" {
-			return errors.New("cert file not specified")
-		}
-		if c.KeyFile == "" {
-			return errors.New("key file not specified")
-		}
-	}
-	if c.Redis {
-		if c.RedisHost == "" {
-			c.RedisHost = "localhost"
-			logger.Println("could not determine redis host, using localhost")
-		}
-		if c.RedisPort == 0 {
-			c.RedisPort = 6379
-			logger.Println("could not determine redis port, using default")
-		}
-		if c.RedisPassword == "" {
-			logger.Println("could not determine redis password, using default")
-		}
-		if c.RedisDB == "" {
-			c.RedisDB = "0"
-			logger.Println("could not determine redis db, using default")
-		}
-	}
-	return nil
-}
+type keyServerAddr string
 
 type Server struct {
 	config     *ApiConfig
@@ -94,92 +32,23 @@ type Server struct {
 	running    bool
 }
 
-func ParseConf(toConf *system.ConfigMap) (*ApiConfig, error) {
-	config := &ApiConfig{}
-
-	if val, ok := toConf.Get("port"); ok {
-		p, _ := strconv.ParseUint(val, 10, 16)
-		config.Port = uint16(p)
-	}
-
-	if val, ok := toConf.Get("host"); ok {
-		config.Host = val
-	}
-	secure := false
-	if val, ok := toConf.Get("secure"); ok {
-		use, err := strconv.ParseBool(val)
-		if err != nil {
-			logger.Println("could not parse secure config, not using")
-		} else {
-			secure = use
-		}
-	}
-
-	if secure {
-		if val, ok := toConf.Get("cert_file"); ok {
-			config.CertFile = val
-		}
-
-		if val, ok := toConf.Get("key_file"); ok {
-			config.KeyFile = val
-		}
-	}
-
-	if val, ok := toConf.Get("redis"); ok {
-		use, err := strconv.ParseBool(val)
-		if err != nil {
-			logger.Println("could not parse redis config, not using")
-		} else {
-			config.Redis = use
-		}
-	}
-
-	if val, ok := toConf.Get("redishost"); ok {
-		config.RedisHost = val
-	}
-
-	if val, ok := toConf.Get("redisport"); ok {
-		p, err := strconv.ParseUint(val, 10, 16)
-		if err != nil {
-			return config, errors.New("could not parse redis port, aborting redis connection")
-		} else {
-			config.RedisPort = uint16(p)
-		}
-	}
-
-	if val, ok := toConf.Get("redispass"); ok {
-		config.RedisPassword = val
-	}
-
-	if val, ok := toConf.Get("redisdb"); ok {
-		config.RedisDB = val
-	}
-
-	logger.Println("Api finished parsing config")
-	return config, nil
-}
-
-func NewServerPreConf(config *system.ConfigMap) *Server {
-	conf, err := ParseConf(config)
+func NewServer(config *system.ConfigMap, rc *system.ConfigMap) (*Server, error) {
+	conf, err := ParseConf(config, rc)
 	if err != nil {
 		logger.Println(err)
 	}
-	return NewServer(conf)
+	return NewServerWithConf(conf)
 }
 
-type keyServerAddr string
-
-const serverAddrKey keyServerAddr = "serverAddr"
-
-func NewServer(config *ApiConfig) *Server {
+func NewServerWithConf(config *ApiConfig) (*Server, error) {
 	sessionCtl := NewSessionControl()
 	config.init()
 	var cache redis.Store
 	if config.Redis {
 		logger.Println("Using Redis Cache")
-		conn, err := redis.NewStoreWithDB(10, "tcp", fmt.Sprintf("%s:%d", config.RedisHost, config.RedisPort), config.RedisPassword, config.RedisDB, []byte("secret"))
+		conn, err := redis.NewStoreWithDB(10, "tcp", config.RedisConf.Addr(), config.RedisConf.Password, fmt.Sprint(config.RedisConf.DB), []byte("secret"))
 		if err != nil {
-			logger.Fatal(err)
+			return nil, err
 		}
 		cache = conn
 	} else {
@@ -206,7 +75,7 @@ func NewServer(config *ApiConfig) *Server {
 		ctx:        ctx,
 		sessionCtl: *sessionCtl,
 		running:    false,
-	}
+	}, nil
 }
 
 func (s *Server) Start() {
@@ -260,4 +129,8 @@ func (s *Server) Addr(route string) string {
 
 func (s *Server) SetRoute(method, path string, handler gin.HandlerFunc) {
 	s.router.Handle(method, path, handler)
+}
+
+func (s *Server) GetContext() context.Context {
+	return s.ctx
 }
