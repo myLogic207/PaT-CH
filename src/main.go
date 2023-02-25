@@ -13,28 +13,31 @@ import (
 )
 
 func prepareData(config *system.Config) (*system.ConfigMap, *system.ConfigMap, error) {
-	var dbConf, redisConf system.ConfigMap
+	log.Println("loading data configs...")
+	var dbConf, redisConf *system.ConfigMap
 	if val, ok := config.Get("db"); ok {
-		if cMap, ok := val.(system.ConfigMap); ok {
+		if cMap, ok := val.(*system.ConfigMap); ok {
 			dbConf = cMap
 		}
 	} else {
 		return nil, nil, errors.New("db config not found")
 	}
 	if val, ok := config.Get("redis"); ok {
-		if cMap, ok := val.(system.ConfigMap); ok {
+		if cMap, ok := val.(*system.ConfigMap); ok {
 			redisConf = cMap
 		}
 	} else {
 		return nil, nil, errors.New("redis config not found")
 	}
-	return &dbConf, &redisConf, nil
+	log.Println("data configs loaded")
+	return dbConf, redisConf, nil
 }
 
 func prepareApi(config *system.Config) (*system.ConfigMap, *system.ConfigMap, error) {
-	var apiConf, redisConf system.ConfigMap
+	log.Println("loading api configs...")
+	var apiConf, redisConf *system.ConfigMap
 	if val, ok := config.Get("api"); ok {
-		if cMap, ok := val.(system.ConfigMap); ok {
+		if cMap, ok := val.(*system.ConfigMap); ok {
 			apiConf = cMap
 		} else {
 			return nil, nil, errors.New("api config is not a map")
@@ -43,7 +46,7 @@ func prepareApi(config *system.Config) (*system.ConfigMap, *system.ConfigMap, er
 		return nil, nil, errors.New("api config not found")
 	}
 	if val, ok := config.Get("redis"); ok {
-		if cMap, ok := val.(system.ConfigMap); ok {
+		if cMap, ok := val.(*system.ConfigMap); ok {
 			redisConf = cMap
 		} else {
 			return nil, nil, errors.New("redis config is not a map")
@@ -56,31 +59,36 @@ func prepareApi(config *system.Config) (*system.ConfigMap, *system.ConfigMap, er
 	} else {
 		log.Println("redis db not set, using default")
 	}
-	return &apiConf, &redisConf, nil
+	log.Println("api configs loaded")
+	return apiConf, redisConf, nil
 }
 
 func main() {
+	log.Println("starting PATCH...")
 	config := system.LoadConfig("PATCH")
 	dbConf, redisConf, err := prepareData(config)
 	if err != nil {
-		panic(err)
+		log.Fatalln("error while preparing data: ", err)
 	}
 	apiConf, cacheConf, err := prepareApi(config)
 	if err != nil {
-		panic(err)
+		log.Fatalln("error while preparing api: ", err)
 	}
 	server, err := api.NewServer(apiConf, cacheConf)
 	if err != nil {
-		panic(err)
+		log.Fatalln("error while creating server: ", err)
 	}
 	database, err := data.NewConnector(dbConf, server.GetContext())
 	if err != nil {
-		panic(err)
+		log.Fatalln("error while creating database connector: ", err)
 	}
 	cache, err := cache.NewConnector(redisConf, server.GetContext())
 	if err != nil {
-		panic(err)
+		log.Fatalln("error while creating cache connector: ", err)
 	}
+	log.Println("Components initialized, starting server...")
+	defer cache.Close()
+	database.Init()
 	server.Start()
 	defer server.Stop()
 	time.Sleep(10000 * time.Second)

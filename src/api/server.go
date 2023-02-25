@@ -15,9 +15,16 @@ import (
 	"github.com/mylogic207/PaT-CH/system"
 )
 
-const serverAddrKey keyServerAddr = "serverAddr"
+const (
+	serverAddrKey keyServerAddr = "serverAddr"
+)
 
-var logger = log.New(log.Writer(), "api: ", log.Flags())
+var (
+	logger               = log.New(log.Writer(), "api: ", log.Flags())
+	ErrConnectionRefused = errors.New("connection refused")
+	ErrStartServer       = errors.New("could not start server")
+	ErrStopServer        = errors.New("could not stop server")
+)
 
 type keyServerAddr string
 
@@ -48,7 +55,8 @@ func NewServerWithConf(config *ApiConfig) (*Server, error) {
 		logger.Println("Using Redis Cache")
 		conn, err := redis.NewStoreWithDB(10, "tcp", config.RedisConf.Addr(), config.RedisConf.Password, fmt.Sprint(config.RedisConf.DB), []byte("secret"))
 		if err != nil {
-			return nil, err
+			logger.Println(err)
+			return nil, ErrConnectionRefused
 		}
 		cache = conn
 	} else {
@@ -78,12 +86,13 @@ func NewServerWithConf(config *ApiConfig) (*Server, error) {
 	}, nil
 }
 
-func (s *Server) Start() {
+func (s *Server) Start() error {
 	logger.Println("Starting server")
 	s.running = true
 	s.serverWg.Add(1)
 	logger.Println("Serving on " + s.config.Addr())
-	go func() {
+	errorChannel := make(chan error)
+	go func(c chan error) {
 		defer s.serverWg.Done()
 		var service func() error
 		if s.config.Secure {
@@ -92,10 +101,13 @@ func (s *Server) Start() {
 			service = s.listenAndServeWrapper
 		}
 		if err := service(); err != http.ErrServerClosed {
-			logger.Println("Server Error: ", err)
+			logger.Println(err)
+			c <- ErrStartServer
 		}
 		s.cancel()
-	}()
+	}(errorChannel)
+	logger.Fatal(<-errorChannel)
+	return nil
 }
 
 func (s *Server) listenAndServeWrapper() error {
@@ -108,10 +120,12 @@ func (s *Server) listenAndServeTLSWrapper() error {
 
 func (s *Server) Stop() error {
 	if !s.running {
-		return errors.New("server not running")
+		logger.Println("Server is not running")
+		return ErrStopServer
 	}
 	if err := s.server.Shutdown(s.ctx); err != nil {
-		return err
+		logger.Println(err)
+		return ErrStopServer
 	}
 	s.serverWg.Wait()
 	s.running = false
