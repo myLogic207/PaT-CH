@@ -1,6 +1,7 @@
 package system
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -9,10 +10,17 @@ import (
 	"time"
 )
 
+var (
+	logger           = log.New(os.Stdout, "system: ", log.LstdFlags)
+	ErrNotSplittable = errors.New("cannot split into minimum (2) parts")
+	ErrConfNotEmpy   = errors.New("config field not empty")
+	ErrFieldNil      = errors.New("supplied field cannot be nil")
+)
+
 func twoSplit(variable string, splitter string) (string, string, error) {
 	split := strings.Split(variable, splitter)
 	if len(split) < 2 {
-		return "", "", fmt.Errorf("cannot split into minimum (2) parts")
+		return "", "", ErrNotSplittable
 	}
 	key, val := split[0], split[1:]
 	return key, strings.Join(val, ""), nil
@@ -61,6 +69,12 @@ type Config struct {
 	drct map[string]string
 }
 
+type ConfEntry struct {
+	parent string
+	field  string
+	value  string
+}
+
 func NewConfig() *Config {
 	return &Config{
 		cmpx: make(map[string]*ConfigMap),
@@ -82,10 +96,12 @@ func (c *Config) Get(field string) (interface{}, bool) {
 
 func (c *Config) Set(field string, value interface{}) error {
 	if _, ok := c.cmpx[strings.ToLower(field)]; ok || c.drct[strings.ToLower(field)] != "" {
-		return fmt.Errorf("Config field not empty: %s", field)
+		logger.Println("Config field not empty: ", field)
+		return ErrConfNotEmpy
 	}
 	if value == nil {
-		return fmt.Errorf("Config field cannot be nil: %s", field)
+		logger.Println("Config field cannot be nil: ", field)
+		return ErrFieldNil
 	}
 	c.Lock()
 	defer c.Unlock()
@@ -119,15 +135,22 @@ func (c *Config) GetField(parent string, field string) (string, bool) {
 func (c *Config) SetField(section string, field string, value string) error {
 	section = strings.ToLower(section)
 	if val, ok := c.Get(section); !ok {
-		log.Printf("Creating new config section: %s", section)
+		logger.Printf("Creating new config section: %s", section)
 		c.Set(section, NewConfigMap())
 	} else {
 		if _, ok := val.(string); ok {
-			return fmt.Errorf("Config field in use: %s", section)
+			return ErrConfNotEmpy
 		}
 	}
-	log.Printf("Setting config field: %s->%s = %s", section, field, value)
+	logger.Printf("Setting config field: %s->%s = %s", section, field, value)
 	return c.cmpx[section].Set(field, value)
+}
+
+func (c *Config) SetEntry(entry *ConfEntry) error {
+	if entry.field == "" {
+		return c.Set(entry.parent, entry.value)
+	}
+	return c.SetField(entry.parent, entry.field, entry.value)
 }
 
 func (c *Config) Sprint() string {
@@ -152,32 +175,55 @@ func (c *Config) Print() {
 
 // -----------------------------
 
-func LoadConfig(prefix string) *Config {
-	log.Println("Loading config from environment variables (prefix: " + prefix + ")")
-	config := NewConfig()
-	waitGroup := sync.WaitGroup{}
-	for _, envVar := range os.Environ() {
-		if !strings.HasPrefix(envVar, prefix) {
-			continue
+func getVars(prefix string, wg *sync.WaitGroup) <-chan string {
+	variableStream := make(chan string, len(os.Environ()))
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		defer close(variableStream)
+		wg.Add(len(os.Environ()))
+		for _, envVar := range os.Environ() {
+			defer wg.Done()
+			if !strings.HasPrefix(envVar, prefix) {
+				continue
+			}
+			variableStream <- envVar
 		}
-		waitGroup.Add(1)
-		go func(envVar string) {
-			defer waitGroup.Done()
-			parent, field, value := parseEnvVar(envVar, len(prefix))
-			if parent == "" {
-				return
-			}
-			if field == "" {
-				if err := config.Set(parent, value); err != nil {
-					log.Println(err)
-				}
-				return
-			}
-			if err := config.SetField(parent, field, value); err != nil {
-				log.Println(err)
-			}
-		}(envVar)
+	}()
+	return variableStream
+}
+
+func parseStream(variableStream <-chan string, wg *sync.WaitGroup, prefixLen int) <-chan *ConfEntry {
+	entries := make(chan *ConfEntry, 1)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		defer close(entries)
+		for envVar := range variableStream {
+			entries <- parseEnvVar(envVar, prefixLen)
+		}
+	}()
+	return entries
+}
+
+func setEntries(entryStream <-chan *ConfEntry, wg *sync.WaitGroup, config *Config) {
+	for entry := range entryStream {
+		wg.Add(1)
+		go func(entry *ConfEntry) {
+			defer wg.Done()
+			config.SetEntry(entry)
+		}(entry)
 	}
+}
+
+func LoadConfig(prefix string) *Config {
+	logger.Println("Loading config from environment variables (prefix: " + prefix + ")")
+	waitGroup := &sync.WaitGroup{}
+	variableStream := getVars(prefix, waitGroup)
+	entries := parseStream(variableStream, waitGroup, len(prefix))
+	config := NewConfig()
+	setEntries(entries, waitGroup, config)
+	logger.Println("Waiting for config to load...")
 	timeoutChannel := make(chan bool, 1)
 	go func() {
 		defer close(timeoutChannel)
@@ -185,28 +231,35 @@ func LoadConfig(prefix string) *Config {
 	}()
 	select {
 	case <-timeoutChannel:
-		log.Println("Config loaded")
+		logger.Println("Config loaded")
 		return config
 	case <-time.After(10 * time.Second):
-		log.Println("Config load timeout - partial config supplied")
-		return config
+		logger.Fatalln("Config load timeout - partial config supplied")
+		return nil
 	}
 }
 
-func parseEnvVar(envVar string, prefixLen int) (string, string, string) {
+func parseEnvVar(envVar string, prefixLen int) *ConfEntry {
 	rawKey, value, err := twoSplit(envVar, "=")
 	if err != nil {
-		log.Println(err)
-		return "", "", ""
+		logger.Println(err)
+		return nil
 	}
 	key := string(rawKey[(prefixLen + 1):])
 	if strings.Contains(key, "_") {
 		parent, field, err := twoSplit(key, "_")
 		if err != nil {
 
-			log.Println(err)
+			logger.Println(err)
 		}
-		return parent, field, value
+		return &ConfEntry{
+			parent: string(parent),
+			field:  string(field),
+			value:  value,
+		}
 	}
-	return key, "", value
+	return &ConfEntry{
+		parent: key,
+		value:  value,
+	}
 }
