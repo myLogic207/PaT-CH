@@ -95,14 +95,11 @@ func (c *Config) Get(field string) (interface{}, bool) {
 }
 
 func (c *Config) Set(field string, value interface{}) error {
-	if _, ok := c.cmpx[strings.ToLower(field)]; ok || c.drct[strings.ToLower(field)] != "" {
-		logger.Println("Config field not empty: ", field)
-		return ErrConfNotEmpy
-	}
 	if value == nil {
 		logger.Println("Config field cannot be nil: ", field)
 		return ErrFieldNil
 	}
+	field = strings.ToLower(field)
 	c.Lock()
 	defer c.Unlock()
 	switch valT := value.(type) {
@@ -134,15 +131,19 @@ func (c *Config) GetField(parent string, field string) (string, bool) {
 
 func (c *Config) SetField(section string, field string, value string) error {
 	section = strings.ToLower(section)
-	if val, ok := c.Get(section); !ok {
-		logger.Printf("Creating new config section: %s", section)
-		c.Set(section, NewConfigMap())
-	} else {
-		if _, ok := val.(string); ok {
-			return ErrConfNotEmpy
-		}
+	c.Lock()
+	defer c.Unlock()
+	if c.drct[section] != "" {
+		logger.Printf("Config field already set directly: %s", section)
+		return ErrConfNotEmpy
 	}
-	logger.Printf("Setting config field: %s->%s = %s", section, field, value)
+	if c.cmpx[section] == nil {
+		// logger.Printf("Creating new config map: %s", section)
+		c.cmpx[section] = NewConfigMap()
+	}
+	if os.Getenv("ENVIRONMENT") == "development" {
+		logger.Printf("Setting config field: %s->%s = %s", section, field, value)
+	}
 	return c.cmpx[section].Set(field, value)
 }
 
@@ -187,6 +188,9 @@ func getVars(prefix string, wg *sync.WaitGroup) <-chan string {
 			if !strings.HasPrefix(envVar, prefix) {
 				continue
 			}
+			if strings.Split(envVar, "_")[0] != prefix {
+				continue
+			}
 			variableStream <- envVar
 		}
 	}()
@@ -219,16 +223,16 @@ func setEntries(entryStream <-chan *ConfEntry, wg *sync.WaitGroup, config *Confi
 func LoadConfig(prefix string) *Config {
 	logger.Println("Loading config from environment variables (prefix: " + prefix + ")")
 	waitGroup := &sync.WaitGroup{}
-	variableStream := getVars(prefix, waitGroup)
-	entries := parseStream(variableStream, waitGroup, len(prefix))
-	config := NewConfig()
-	setEntries(entries, waitGroup, config)
-	logger.Println("Waiting for config to load...")
 	timeoutChannel := make(chan bool, 1)
+	config := NewConfig()
 	go func() {
 		defer close(timeoutChannel)
+		variableStream := getVars(prefix, waitGroup)
+		entries := parseStream(variableStream, waitGroup, len(prefix))
+		setEntries(entries, waitGroup, config)
 		waitGroup.Wait()
 	}()
+	logger.Println("Waiting for config to load...")
 	select {
 	case <-timeoutChannel:
 		logger.Println("Config loaded")

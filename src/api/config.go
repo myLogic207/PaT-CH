@@ -11,10 +11,10 @@ import (
 
 type ApiConfig struct {
 	Host      string `json:"host"`
-	Port      uint16 `json:"port"`
-	Secure    bool   `json:"secure"`
-	CertFile  string `json:"cert_file"` // only used if secure is true
-	KeyFile   string `json:"key_file"`  // only used if secure is true
+	Port      uint16 `json:"http_port"`
+	SPort     uint16 `json:"https_port"` // only used if secure is true
+	CertFile  string `json:"cert_file"`  // only used if secure is true
+	KeyFile   string `json:"key_file"`   // only used if secure is true
 	Redis     bool   `json:"redis"`
 	RedisConf *cache.RedisConfig
 }
@@ -22,8 +22,8 @@ type ApiConfig struct {
 func DefaultConfig() *ApiConfig {
 	return &ApiConfig{
 		Host:     "localhost",
-		Port:     2070,
-		Secure:   false,
+		Port:     2080,
+		SPort:    2443,
 		CertFile: "",
 		KeyFile:  "",
 		Redis:    false,
@@ -40,16 +40,11 @@ func (c *ApiConfig) init() error {
 		logger.Println("could not determine host, using localhost")
 	}
 	if c.Port == 0 {
-		c.Port = 2070
+		c.Port = 2080
 		logger.Println("could not determine port, using default")
 	}
-	if c.Secure {
-		if c.CertFile == "" {
-			return errors.New("cert file not specified")
-		}
-		if c.KeyFile == "" {
-			return errors.New("key file not specified")
-		}
+	if c.SPort == 0 {
+		logger.Println("could not determine https port, not using https")
 	}
 	if c.Redis {
 		if c.RedisConf.Host == "" {
@@ -68,32 +63,26 @@ func (c *ApiConfig) init() error {
 func ParseConf(toConf *system.ConfigMap, rc *system.ConfigMap) (*ApiConfig, error) {
 	config := &ApiConfig{}
 
+	if val, ok := toConf.Get("host"); ok {
+		config.Host = val
+	}
+
 	if val, ok := toConf.Get("port"); ok {
 		p, _ := strconv.ParseUint(val, 10, 16)
 		config.Port = uint16(p)
 	}
 
-	if val, ok := toConf.Get("host"); ok {
-		config.Host = val
-	}
-	secure := false
-	if val, ok := toConf.Get("secure"); ok {
-		use, err := strconv.ParseBool(val)
-		if err != nil {
-			logger.Println("could not parse secure config, not using")
-		} else {
-			secure = use
-		}
+	if val, ok := toConf.Get("httpsport"); ok {
+		p, _ := strconv.ParseUint(val, 10, 16)
+		config.SPort = uint16(p)
 	}
 
-	if secure {
-		if val, ok := toConf.Get("cert_file"); ok {
-			config.CertFile = val
-		}
+	if val, ok := toConf.Get("certfile"); ok {
+		config.CertFile = val
+	}
 
-		if val, ok := toConf.Get("key_file"); ok {
-			config.KeyFile = val
-		}
+	if val, ok := toConf.Get("keyfile"); ok {
+		config.KeyFile = val
 	}
 
 	if val, ok := toConf.Get("redis"); ok && rc != nil {

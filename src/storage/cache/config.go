@@ -8,13 +8,13 @@ import (
 )
 
 type RedisConfig struct {
-	Host       string
-	Port       uint16
-	Password   string
-	DB         int
-	Idle       int
-	MaxActive  int
-	TimeoutSec int
+	Host       string `json:"host"`
+	Port       uint16 `json:"port"`
+	Password   string `json:"password"`
+	DB         int    `json:"db"`
+	Idle       int    `json:"idle"`        // max number of idle connections in pool
+	MaxActive  int    `json:"max_active"`  // max number of connections allocated by the pool at a given time
+	TimeoutSec int    `json:"timeout_sec"` // max number of seconds a connection may be reused
 	// Addr     func() string
 }
 
