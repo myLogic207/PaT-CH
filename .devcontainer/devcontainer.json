@@ -1,10 +1,8 @@
 {
-    "name": "patch-container-01",
-    "image": "mcr.microsoft.com/devcontainers/universal:2",
-    "features": {
-        "ghcr.io/devcontainers/features/go:1": {
-            "version": "latest"
-        },
-        "ghcr.io/warrenbuckley/codespace-features/sqlite:1": {}
-    }
+    "name": "patch-service",
+    "dockerComposeFile": "docker-compose.yml",
+    "service": "patch",
+    "workspaceFolder": "/work",
+    "shutdownAction": "stopCompose",
+    "forwardPorts": [2070]
 }
