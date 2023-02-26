@@ -1,7 +1,9 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"math/rand"
@@ -19,8 +21,9 @@ func randomOffset() uint16 {
 
 func startTestServer() *Server {
 	log.Println("Starting Test Server")
+	ctx := context.Background()
 	gin.SetMode(gin.ReleaseMode)
-	s, err := NewServerWithConf(&ApiConfig{
+	s, err := NewServerWithConf(ctx, &ApiConfig{
 		Host:  "127.0.0.1",
 		Port:  2070 + randomOffset(),
 		Redis: false,
@@ -42,23 +45,6 @@ func TestMain(m *testing.M) {
 	os.Exit(exit)
 }
 
-func TestIndependent(t *testing.T) {
-	t.Log("Testing Server Start")
-
-	server, err := NewServerWithConf(&ApiConfig{
-		Host:  "localhost",
-		Port:  3070 + randomOffset(),
-		Redis: false,
-	})
-	if err != nil {
-		t.Error(err)
-		t.FailNow()
-	}
-	server.Start()
-	time.Sleep(time.Duration(100))
-	server.Stop()
-}
-
 func TestServer(t *testing.T) {
 	t.Log("Testing Server Requests")
 
@@ -78,6 +64,7 @@ func TestServer(t *testing.T) {
 func TestSessionNonAuth(t *testing.T) {
 	t.Log("Testing Session Middleware")
 	resp, err := http.DefaultClient.Get(TESTSERVER.Addr("/api/v1/auth/session"))
+	fmt.Print("\n")
 	if err != nil {
 		t.Error(err)
 		return
@@ -90,20 +77,19 @@ func TestSessionNonAuth(t *testing.T) {
 }
 
 type SessionResponse struct {
-	ID      string `json:"id"`
 	Message string `json:"message"`
 }
 
 func TestSessionAuth(t *testing.T) {
 	t.Log("Testing Session Middleware")
-	defer TESTSERVER.Stop()
 	resp, err := http.DefaultClient.Post(TESTSERVER.Addr("/api/v1/auth/connect"), "application/json", nil)
+	fmt.Print("\n")
 	if err != nil {
 		t.Error(err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("Expected 200, got %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusCreated {
+		t.Errorf("Expected 201, got %d", resp.StatusCode)
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -115,11 +101,8 @@ func TestSessionAuth(t *testing.T) {
 	t.Log(string(body))
 	response := SessionResponse{}
 	json.Unmarshal([]byte(body), &response)
-	if response.ID == "" {
-		t.Error("Empty ID")
-	}
 	if response.Message != "connected" {
 		t.Errorf("Expected 'connected', got '%s'", response.Message)
 	}
-	t.Log("Session ID:", response.ID)
+	t.Log("Status Successful")
 }

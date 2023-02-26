@@ -14,14 +14,14 @@ var TESTDB *DataBase
 func TestMain(m *testing.M) {
 	// config := DefaultConfig()
 	config := &DataConfig{
-		host:     "patch-test-6310.7tc.cockroachlabs.cloud",
-		port:     26257,
-		user:     "patch",
+		Host:     "patch-test-6310.7tc.cockroachlabs.cloud",
+		Port:     26257,
+		User:     "patch",
 		password: "MDuKbW__xZs3guKrlK-AdA",
-		dbname:   "patch_db_test",
-		sslmode:  "verify-full",
+		DBname:   "patch_db_test",
+		SSLmode:  "verify-full",
 	}
-	db, err := NewConnectorWithConf(config, ctx)
+	db, err := NewConnectorWithConf(ctx, config)
 	if err != nil {
 		panic(err)
 	}

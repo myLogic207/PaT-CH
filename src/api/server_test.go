@@ -1,6 +1,8 @@
 package api
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -8,11 +10,10 @@ import (
 
 func TestNewServer(t *testing.T) {
 	t.Log("Testing NewServer")
-	server, err := NewServerWithConf(&ApiConfig{
-		Host:   "localhost",
-		Port:   2070,
-		Redis:  false,
-		Secure: false,
+	server, err := NewServerWithConf(context.Background(), &ApiConfig{
+		Host:  "localhost",
+		Port:  3080,
+		Redis: false,
 	})
 	if err != nil {
 		t.Error(err)
@@ -22,12 +23,16 @@ func TestNewServer(t *testing.T) {
 		t.Error("Server is nil")
 	}
 	t.Log("Starting server")
-	server.Start()
-	time.Sleep(1 * time.Millisecond)
-	err = server.Stop()
-	if err != nil {
+
+	if err := server.Start(); !errors.Is(err, ErrStartServer) {
 		t.Error(err)
-		return
+		t.FailNow()
+	}
+	t.Log("Server started")
+	time.Sleep(3 * time.Second)
+	if err := server.Stop(); err != nil {
+		t.Error(err)
+		t.FailNow()
 	}
 	fmt.Println("Stopping finished")
 	t.Log("Server stopped successfully")
