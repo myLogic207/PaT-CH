@@ -49,9 +49,9 @@ func (s SessionControl) Connect(c *gin.Context) {
 	id := s.getNewId()
 	session.Set("id", id)
 	session.Save()
-	c.JSON(http.StatusOK, gin.H{
+	c.JSON(http.StatusCreated, gin.H{
 		"message": "connected",
-		"id":      id,
+		// "id":      id,
 	})
 }
 
