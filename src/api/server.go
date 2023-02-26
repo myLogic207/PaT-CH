@@ -7,8 +7,8 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"sync"
 
+	"github.com/gin-contrib/sessions"
 	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-contrib/sessions/redis"
 	"github.com/gin-gonic/gin"
@@ -22,7 +22,7 @@ const (
 var (
 	logger               = log.New(log.Writer(), "api: ", log.Flags())
 	ErrConnectionRefused = errors.New("connection refused")
-	ErrStartServer       = errors.New("could not start server")
+	ErrStartServer       = errors.New("server starting")
 	ErrStopServer        = errors.New("could not stop server")
 )
 
@@ -32,24 +32,20 @@ type Server struct {
 	config     *ApiConfig
 	router     *gin.Engine
 	server     *http.Server
-	serverWg   sync.WaitGroup
-	cancel     context.CancelFunc
 	ctx        context.Context
 	sessionCtl SessionControl
 	running    bool
 }
 
-func NewServer(config *system.ConfigMap, rc *system.ConfigMap) (*Server, error) {
+func NewServer(ctx context.Context, config *system.ConfigMap, rc *system.ConfigMap) (*Server, error) {
 	conf, err := ParseConf(config, rc)
 	if err != nil {
 		logger.Println(err)
 	}
-	return NewServerWithConf(conf)
+	return NewServerWithConf(ctx, conf)
 }
 
-func NewServerWithConf(config *ApiConfig) (*Server, error) {
-	sessionCtl := NewSessionControl()
-	config.init()
+func NewServerWithConf(ctx context.Context, config *ApiConfig) (*Server, error) {
 	var cache redis.Store
 	if config.Redis {
 		logger.Println("Using Redis Cache")
@@ -63,9 +59,21 @@ func NewServerWithConf(config *ApiConfig) (*Server, error) {
 		logger.Println("No cache provided, using cookie fallback")
 		cache = cookie.NewStore([]byte("secret"))
 	}
+	return NewServerWithCacheConf(ctx, config, cache)
+}
+
+func NewServerWithCache(ctx context.Context, conf *system.ConfigMap, cache sessions.Store) (*Server, error) {
+	config, err := ParseConf(conf, nil)
+	if err != nil {
+		logger.Println(err)
+	}
+	return NewServerWithCacheConf(ctx, config, cache)
+}
+func NewServerWithCacheConf(ctx context.Context, config *ApiConfig, cache sessions.Store) (*Server, error) {
+	config.init()
+	sessionCtl := NewSessionControl()
 	router := NewRouter(sessionCtl, cache)
 
-	ctx, cancelCtx := context.WithCancel(context.Background())
 	server := &http.Server{
 		Addr:    config.Addr(),
 		Handler: router,
@@ -78,8 +86,6 @@ func NewServerWithConf(config *ApiConfig) (*Server, error) {
 		config:     config,
 		router:     router,
 		server:     server,
-		serverWg:   sync.WaitGroup{},
-		cancel:     cancelCtx,
 		ctx:        ctx,
 		sessionCtl: *sessionCtl,
 		running:    false,
@@ -89,33 +95,22 @@ func NewServerWithConf(config *ApiConfig) (*Server, error) {
 func (s *Server) Start() error {
 	logger.Println("Starting server")
 	s.running = true
-	s.serverWg.Add(1)
-	logger.Println("Serving on " + s.config.Addr())
-	errorChannel := make(chan error)
-	go func(c chan error) {
-		defer s.serverWg.Done()
-		var service func() error
-		if s.config.Secure {
-			service = s.listenAndServeTLSWrapper
-		} else {
-			service = s.listenAndServeWrapper
+	go func() {
+		if err := s.server.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+			logger.Fatalln(err)
 		}
-		if err := service(); err != http.ErrServerClosed {
-			logger.Println(err)
-			c <- ErrStartServer
+	}()
+	logger.Println("Serving http on " + s.config.Addr())
+	if s.config.SPort == 0 || s.config.CertFile == "" || s.config.KeyFile == "" {
+		return ErrStartServer
+	}
+	go func() {
+		if err := s.server.ListenAndServeTLS(s.config.CertFile, s.config.KeyFile); !errors.Is(err, http.ErrServerClosed) {
+			logger.Fatalln(err)
 		}
-		s.cancel()
-	}(errorChannel)
-	logger.Fatal(<-errorChannel)
-	return nil
-}
-
-func (s *Server) listenAndServeWrapper() error {
-	return s.server.ListenAndServe()
-}
-
-func (s *Server) listenAndServeTLSWrapper() error {
-	return s.server.ListenAndServeTLS(s.config.CertFile, s.config.KeyFile)
+	}()
+	logger.Println("Serving https on " + fmt.Sprint(s.config.SPort))
+	return ErrStartServer
 }
 
 func (s *Server) Stop() error {
@@ -127,7 +122,6 @@ func (s *Server) Stop() error {
 		logger.Println(err)
 		return ErrStopServer
 	}
-	s.serverWg.Wait()
 	s.running = false
 	log.Println("Server stopped")
 	return nil
@@ -135,9 +129,6 @@ func (s *Server) Stop() error {
 
 func (s *Server) Addr(route string) string {
 	pre := "http://"
-	if s.config.Secure {
-		pre = "https://"
-	}
 	return pre + s.config.Addr() + route
 }
 
