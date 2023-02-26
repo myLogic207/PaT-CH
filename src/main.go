@@ -1,13 +1,13 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"log"
 	"time"
 
 	_ "github.com/joho/godotenv/autoload"
 	"github.com/mylogic207/PaT-CH/api"
-	"github.com/mylogic207/PaT-CH/storage/cache"
 	"github.com/mylogic207/PaT-CH/storage/data"
 	"github.com/mylogic207/PaT-CH/system"
 )
@@ -65,6 +65,7 @@ func prepareApi(config *system.Config) (*system.ConfigMap, *system.ConfigMap, er
 
 func main() {
 	log.Println("starting PATCH...")
+	mainContext, mainStop := context.WithCancel(context.Background())
 	config := system.LoadConfig("PATCH")
 	dbConf, redisConf, err := prepareData(config)
 	if err != nil {
@@ -74,23 +75,23 @@ func main() {
 	if err != nil {
 		log.Fatalln("error while preparing api: ", err)
 	}
-	server, err := api.NewServer(apiConf, cacheConf)
-	if err != nil {
-		log.Fatalln("error while creating server: ", err)
-	}
-	database, err := data.NewConnector(dbConf, server.GetContext())
+	database, err := data.NewConnector(mainContext, dbConf, redisConf)
 	if err != nil {
 		log.Fatalln("error while creating database connector: ", err)
 	}
-	cache, err := cache.NewConnector(redisConf, server.GetContext())
+	server, err := api.NewServer(mainContext, apiConf, cacheConf)
 	if err != nil {
-		log.Fatalln("error while creating cache connector: ", err)
+		log.Fatalln("error while creating server: ", err)
 	}
 	log.Println("Components initialized, starting server...")
-	defer cache.Close()
 	database.Init()
-	server.Start()
+	go func() {
+		if err := server.Start(); err != nil {
+			log.Fatalln("error while starting server: ", err)
+		}
+	}()
 	defer server.Stop()
 	time.Sleep(10000 * time.Second)
 	// print("done")
+	mainStop()
 }

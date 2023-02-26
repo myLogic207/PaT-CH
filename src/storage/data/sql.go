@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/mylogic207/PaT-CH/storage/cache"
 	"github.com/mylogic207/PaT-CH/system"
 )
 
@@ -42,17 +43,18 @@ type DataBase struct {
 	pool    *pgxpool.Pool
 	context context.Context
 	config  *DataConfig
+	cache   *cache.RedisConnector
 }
 
-func NewConnector(config *system.ConfigMap, ctx context.Context) (*DataBase, error) {
-	conf, err := parseConfig(config)
+func NewConnector(ctx context.Context, config *system.ConfigMap, rc *system.ConfigMap) (*DataBase, error) {
+	conf, err := parseConfig(config, rc)
 	if err != nil {
 		return nil, err
 	}
-	return NewConnectorWithConf(conf, ctx)
+	return NewConnectorWithConf(ctx, conf)
 }
 
-func NewConnectorWithConf(config *DataConfig, ctx context.Context) (*DataBase, error) {
+func NewConnectorWithConf(ctx context.Context, config *DataConfig) (*DataBase, error) {
 	if err := config.init(); err != nil {
 		return nil, err
 	}
@@ -77,7 +79,19 @@ func NewConnectorWithConf(config *DataConfig, ctx context.Context) (*DataBase, e
 		config:  config,
 		context: ctx,
 	}
+	if config.UseCache {
+		cache, err := cache.NewConnectorWithConf(config.RedisConf)
+		if err != nil {
+			logger.Println("error connecting to redis: ", err)
+			return nil, err
+		}
+		dbConn.cache = cache
+	}
 	return dbConn, nil
+}
+
+func (db *DataBase) SetCache(cache *cache.RedisConnector) {
+	db.cache = cache
 }
 
 func (db *DataBase) Disconnect() error {
