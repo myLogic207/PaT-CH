@@ -35,7 +35,11 @@ func NewRouter(sessionCtl *SessionControl, cache sessions.Store) *gin.Engine {
 		Output:    logger.Writer(),
 		SkipPaths: apiSkipPaths,
 	}))
-
+	cache.Options(sessions.Options{
+		Path:     "/",
+		MaxAge:   60 * 3, // 3 minute
+		SameSite: http.SameSiteLaxMode,
+	})
 	router.Use(gin.Recovery())
 	router.Use(sessions.Sessions("mysession", cache))
 
@@ -90,6 +94,7 @@ func RoutePass(c *gin.Context) {
 		})
 		c.Abort()
 	}
+	c.Set("id", session.Get("id"))
 }
 
 func Status(c *gin.Context) {
@@ -111,6 +116,15 @@ func GetID(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"id": session.Get("id").(string),
 	})
+}
+
+type ForwardPatch struct {
+	Path string `json:"path"`
+	Dest string `json:"dest"`
+}
+
+func addForward(c *gin.Context) {
+	// TODO: add forward patch
 }
 
 // Middleware
