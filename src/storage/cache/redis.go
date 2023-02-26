@@ -12,52 +12,50 @@ import (
 var logger = log.New(log.Writer(), "cache: ", log.Flags())
 
 type RedisConnector struct {
-	Active bool
-	Store  *redis.Client
-	ctx    context.Context
+	active bool
+	store  *redis.Client
 }
 
-func NewConnector(config *system.ConfigMap, ctx context.Context) (*RedisConnector, error) {
+func NewConnector(config *system.ConfigMap) (*RedisConnector, error) {
 	redisConfig, err := ParseConf(config)
 	if err != nil {
 		logger.Println("could not parse redis config, using default(s)")
 	}
-	return NewConnectorWithConf(redisConfig, ctx)
+	return NewConnectorWithConf(redisConfig)
 }
 
-func NewConnectorWithConf(config *RedisConfig, ctx context.Context) (*RedisConnector, error) {
+func NewConnectorWithConf(config *RedisConfig) (*RedisConnector, error) {
 	connection := redis.NewClient(&redis.Options{
 		Addr:     config.Addr(),
 		Password: config.Password,
 		DB:       config.DB,
 	})
-	status := connection.Ping(ctx)
+	status := connection.Ping(context.Background())
 	if status.Err() != nil {
 		logger.Println(status.Err())
 		return nil, errors.New("could not connect to redis")
 	}
 	logger.Println(status.String())
 	return &RedisConnector{
-		ctx:   ctx,
-		Store: connection,
+		store: connection,
 	}, nil
 }
 
 func (c *RedisConnector) Close() error {
-	return c.Store.Close()
+	return c.store.Close()
 }
 
-func (c *RedisConnector) Get(key string, ctx context.Context) (string, error) {
+func (c *RedisConnector) Get(ctx context.Context, key string) (string, error) {
 	// if Redis get from Redis
-	if c.Active {
-		return c.Store.Get(ctx, key).Result()
+	if c.active {
+		return c.store.Get(ctx, key).Result()
 	}
 	return "", errors.New("redis not active")
 }
 
-func (c *RedisConnector) Set(key string, value string, ctx context.Context) error {
-	if c.Active {
-		return c.Store.Set(ctx, key, value, 0).Err()
+func (c *RedisConnector) Set(ctx context.Context, key string, value string) error {
+	if c.active {
+		return c.store.Set(ctx, key, value, 0).Err()
 	}
 	return errors.New("redis not active")
 }
