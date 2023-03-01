@@ -58,43 +58,48 @@ func (m *WhereMap) Get(field FieldName) DBValue {
 }
 
 type DBInit struct {
-	Table []DBTable `json:"table"`
+	Name  string    `json:"name" yaml:"name"`     // e.g. "system"
+	Table []DBTable `json:"tables" yaml:"tables"` // e.g. "users"
 }
 
 func (i *DBInit) String() string {
 	sb := strings.Builder{}
-	for _, table := range i.Table {
+	sb.WriteString(fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s", i.Table[0].String()))
+	if len(i.Table) < 2 {
+		return sb.String()
+	}
+	for _, table := range i.Table[1:] {
 		sb.WriteString(table.String())
-		sb.WriteString("; ")
+		sb.WriteString("\\ ")
 	}
 	return sb.String()
 }
 
 type DBTable struct {
-	Name   string    `json:"name"` // e.g. "users"
-	Fields []DBField `json:"fields"`
+	Name   string    `json:"name" yaml:"name"` // e.g. "users"
+	Fields []DBField `json:"fields" yaml:"fields"`
 }
 
 func (t *DBTable) String() string {
 	sb := strings.Builder{}
-	sb.WriteString("CREATE TABLE IF NOT EXISTS")
-	sb.WriteString(t.Name)
-	sb.WriteString(" (")
-	for _, field := range t.Fields {
+	sb.WriteString(fmt.Sprintf("%s (", strings.ToLower(t.Name)))
+	fLen := len(t.Fields) - 1
+	for i, field := range t.Fields {
 		sb.WriteString(field.String())
-		sb.WriteString(", ")
+		if i < fLen {
+			sb.WriteString(", ")
+		}
 	}
-	sb.WriteString(");")
-	return sb.String()
+	return sb.String() + ")"
 }
 
 // DBField represents a field in a database table
 
 type DBField struct {
-	Name       FieldName `json:"name"`
-	Typ        string    `json:"type"`
-	Len        int       `json:"length"`
-	Constraint string    `json:"constraint"` // e.g. NOT NULL
+	Name       FieldName `json:"name" yaml:"name"` // e.g. "id"
+	Typ        string    `json:"type" yaml:"type"` // e.g. "INT"
+	Len        int       `json:"length" yaml:"length"`
+	Constraint string    `json:"constraint" yaml:"constraint"`
 }
 
 func (f *DBField) String() string {
