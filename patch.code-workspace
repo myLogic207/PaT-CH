@@ -6,9 +6,10 @@
     ],
 	"settings": {
 		"cSpell.words": [
-			"godotenv",
-			"joho",
-			"redisdb"
+            "godotenv",
+            "joho",
+            "pgxpool",
+            "redisdb"
         ],
         "sqltools.connections": [
             {
