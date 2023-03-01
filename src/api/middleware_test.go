@@ -25,7 +25,7 @@ func startTestServer() *Server {
 	gin.SetMode(gin.ReleaseMode)
 	s, err := NewServerWithConf(ctx, &ApiConfig{
 		Host:  "127.0.0.1",
-		Port:  2070 + randomOffset(),
+		Port:  3080 + randomOffset(),
 		Redis: false,
 	})
 	if err != nil {

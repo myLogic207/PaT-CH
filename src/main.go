@@ -84,12 +84,11 @@ func main() {
 		log.Fatalln("error while creating server: ", err)
 	}
 	log.Println("Components initialized, starting server...")
-	database.Init()
-	go func() {
-		if err := server.Start(); err != nil {
-			log.Fatalln("error while starting server: ", err)
-		}
-	}()
+	go database.Init()
+	if err := server.Start(); err != api.ErrStartServer {
+		log.Fatalln("error while starting server: ", err)
+	}
+	log.Println("Server started")
 	defer server.Stop()
 	time.Sleep(10000 * time.Second)
 	// print("done")

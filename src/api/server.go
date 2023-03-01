@@ -33,7 +33,7 @@ type Server struct {
 	router     *gin.Engine
 	server     *http.Server
 	ctx        context.Context
-	sessionCtl SessionControl
+	sessionCtl *SessionControl
 	running    bool
 }
 
@@ -69,6 +69,8 @@ func NewServerWithCache(ctx context.Context, conf *system.ConfigMap, cache sessi
 	}
 	return NewServerWithCacheConf(ctx, config, cache)
 }
+
+// Actual server creation
 func NewServerWithCacheConf(ctx context.Context, config *ApiConfig, cache sessions.Store) (*Server, error) {
 	config.init()
 	sessionCtl := NewSessionControl()
@@ -87,7 +89,7 @@ func NewServerWithCacheConf(ctx context.Context, config *ApiConfig, cache sessio
 		router:     router,
 		server:     server,
 		ctx:        ctx,
-		sessionCtl: *sessionCtl,
+		sessionCtl: sessionCtl,
 		running:    false,
 	}, nil
 }
@@ -101,15 +103,16 @@ func (s *Server) Start() error {
 		}
 	}()
 	logger.Println("Serving http on " + s.config.Addr())
-	if s.config.SPort == 0 || s.config.CertFile == "" || s.config.KeyFile == "" {
-		return ErrStartServer
-	}
-	go func() {
-		if err := s.server.ListenAndServeTLS(s.config.CertFile, s.config.KeyFile); !errors.Is(err, http.ErrServerClosed) {
-			logger.Fatalln(err)
-		}
-	}()
-	logger.Println("Serving https on " + fmt.Sprint(s.config.SPort))
+	// TODO: Add https support (as secondary server)
+	// if s.config.SPort == 0 || s.config.CertFile == "" || s.config.KeyFile == "" {
+	// 	return ErrStartServer
+	// }
+	// go func() {
+	// 	if err := s.server.ListenAndServeTLS(s.config.CertFile, s.config.KeyFile); !errors.Is(err, http.ErrServerClosed) {
+	// 		logger.Fatalln(err)
+	// 	}
+	// }()
+	// logger.Println("Serving https on " + fmt.Sprint(s.config.SPort))
 	return ErrStartServer
 }
 
