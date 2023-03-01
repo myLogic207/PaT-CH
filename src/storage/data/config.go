@@ -66,6 +66,9 @@ func (c *DataConfig) init() error {
 			return errors.New("redis config is nil")
 		}
 	}
+	if c.InitFile == "" {
+		c.InitFile = "db.init.json"
+	}
 	return nil
 }
 

@@ -1,7 +1,9 @@
 package data
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -20,6 +22,7 @@ var (
 	logger             = log.New(log.Writer(), "data: ", log.Flags())
 	ErrTableNotEmpty   = errors.New("table is not empty")
 	ErrOpenInitFile    = errors.New("error opening init file")
+	ErrReadFile        = errors.New("error reading init file")
 	ErrConnect         = errors.New("error connecting to database")
 	ErrConnectRedis    = errors.New("error connecting to redis")
 	ErrDBCreate        = errors.New("error creating table")
@@ -127,7 +130,54 @@ func (db *DataBase) Init() error {
 		return ErrOpenInitFile
 	}
 	defer file.Close()
+	var query string
+	if strings.HasSuffix(db.config.InitFile, "sql") {
+		logger.Println("warning: initializing database with sql file")
+		query = readSQL(file)
+	} else if strings.HasSuffix(db.config.InitFile, "json") {
+		logger.Println("parsing DB initialization file")
+		if val, err := readJSON(file); err != nil {
+			logger.Println(err)
+			return ErrReadFile
+		} else {
+			query = val
+		}
+	} else {
+		logger.Println("error: invalid file type")
+		return ErrOpenInitFile
+	}
+
+	if os.Getenv("ENVIROMENT") == "DEVELOPMENT" {
+		logger.Println(strings.ReplaceAll(query, "; ", ";\n"))
+
+	}
+
+	_, err = db.pool.Exec(db.context, query)
+	if err != nil {
+		logger.Println(err)
+		return ErrDBCreate
+	}
 	return nil
+}
+
+func readSQL(file *os.File) string {
+	var query string
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		query += scanner.Text()
+	}
+	return query
+}
+
+func readJSON(file *os.File) (string, error) {
+	raw, err := os.ReadFile(file.Name())
+	if err != nil {
+		logger.Println(err)
+		return "", ErrReadFile
+	}
+	initStruct := &DBInit{}
+	json.Unmarshal(raw, initStruct)
+	return initStruct.String(), nil
 }
 
 // DBFunction
@@ -465,17 +515,4 @@ func buildUpdate(values map[FieldName]DBValue) string {
 		counter++
 	}
 	return join(buffer, ", ")
-}
-
-// helper
-
-func join[K any](a []K, sep string) string {
-	sb := strings.Builder{}
-	for i, v := range a {
-		if i > 0 {
-			sb.WriteString(sep)
-		}
-		sb.WriteString(fmt.Sprint(v))
-	}
-	return sb.String()
 }
