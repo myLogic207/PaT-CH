@@ -21,6 +21,7 @@ type DataConfig struct {
 	ConnLifetime string             `json:"connlifetime"` // 1h, 1m, 1s
 	UseCache     bool               `json:"usecache"`     // true, false
 	RedisConf    *cache.RedisConfig `json:"redis"`
+	InitFile     string             `json:"initfile"`
 }
 
 func DefaultConfig() *DataConfig {
