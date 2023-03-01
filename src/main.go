@@ -86,13 +86,13 @@ func prepEnv() (string, error) {
 	}
 	var prefix string
 	if val, ok := os.LookupEnv("PREFIX"); ok {
-		prefix = strings.ToUpper(val) + "_"
+		prefix = strings.ToUpper(val)
 	} else {
 		return "", errors.New("prefix not set")
 	}
 	log.Println("environment loaded")
 
-	if val, ok := os.LookupEnv(fmt.Sprintf("%sDIR", prefix)); ok {
+	if val, ok := os.LookupEnv(fmt.Sprintf("%s_DIR", prefix)); ok {
 		log.Println("setting working directory to ", val)
 		if err := os.Chdir(val); err != nil {
 			return "", err
