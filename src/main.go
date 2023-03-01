@@ -3,7 +3,10 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
+	"os"
+	"strings"
 	"time"
 
 	_ "github.com/joho/godotenv/autoload"
@@ -11,6 +14,19 @@ import (
 	"github.com/mylogic207/PaT-CH/storage/data"
 	"github.com/mylogic207/PaT-CH/system"
 )
+
+const LOGO = `
+8 888888888o      .8.    8888888 8888888888 ,o888888o.    8 8888        8
+8 8888    '88.   .888.         8 8888      8888     '88.  8 8888        8
+8 8888     '88  :88888.        8 8888   ,8 8888       '8. 8 8888        8
+8 8888     ,88 . '88888.       8 8888   88 8888           8 8888        8
+8 8888.   ,88'.8. '88888.      8 8888   88 8888           8 8888        8
+8 888888888P'.8'8. '88888.     8 8888   88 8888           8 8888        8
+8 8888      .8' '8. '88888.    8 8888   88 8888           8 8888888888888
+8 8888     .8'   '8. '88888.   8 8888   '8 8888       .8' 8 8888        8
+8 8888    .888888888. '88888.  8 8888      8888     ,88'  8 8888        8
+8 8888   .8'       '8. '88888. 8 8888       '8888888P'    8 8888        8
+`
 
 func prepareData(config *system.Config) (*system.ConfigMap, *system.ConfigMap, error) {
 	log.Println("loading data configs...")
@@ -63,10 +79,41 @@ func prepareApi(config *system.Config) (*system.ConfigMap, *system.ConfigMap, er
 	return apiConf, redisConf, nil
 }
 
+func prepEnv() (string, error) {
+	log.Println("loading environment...")
+	if val, ok := os.LookupEnv("ENVIRONMENT"); ok {
+		log.Println("starting server in ", val, " mode")
+	}
+	var prefix string
+	if val, ok := os.LookupEnv("PREFIX"); ok {
+		prefix = strings.ToUpper(val) + "_"
+	} else {
+		return "", errors.New("prefix not set")
+	}
+	log.Println("environment loaded")
+
+	if val, ok := os.LookupEnv(fmt.Sprintf("%sDIR", prefix)); ok {
+		log.Println("setting working directory to ", val)
+		if err := os.Chdir(val); err != nil {
+			return "", err
+		}
+	}
+
+	log.Print(LOGO)
+
+	return prefix, nil
+}
+
 func main() {
-	log.Println("starting PATCH...")
+	prefix, err := prepEnv()
+	if err != nil {
+		log.Fatalln("error while preparing environment: ", err)
+	}
+
+	log.Println("starting ", prefix, " server...")
 	mainContext, mainStop := context.WithCancel(context.Background())
-	config := system.LoadConfig("PATCH")
+
+	config := system.LoadConfig(prefix)
 	dbConf, redisConf, err := prepareData(config)
 	if err != nil {
 		log.Fatalln("error while preparing data: ", err)
@@ -75,6 +122,7 @@ func main() {
 	if err != nil {
 		log.Fatalln("error while preparing api: ", err)
 	}
+
 	database, err := data.NewConnector(mainContext, dbConf, redisConf)
 	if err != nil {
 		log.Fatalln("error while creating database connector: ", err)
@@ -83,14 +131,18 @@ func main() {
 	if err != nil {
 		log.Fatalln("error while creating server: ", err)
 	}
-	log.Println("Components initialized, starting server...")
-	go database.Init()
+
+	log.Println("Components initialized, starting...")
+	if err := database.Init(); err != nil {
+		log.Fatalln("error while initializing database: ", err)
+	}
 	if err := server.Start(); err != api.ErrStartServer {
 		log.Fatalln("error while starting server: ", err)
 	}
-	log.Println("Server started")
 	defer server.Stop()
-	time.Sleep(10000 * time.Second)
+	log.Println("Server started")
+
+	time.Sleep(10 * time.Second)
 	// print("done")
 	mainStop()
 }
