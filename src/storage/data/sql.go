@@ -17,8 +17,27 @@ import (
 )
 
 var (
-	logger           = log.New(log.Writer(), "data: ", log.Flags())
-	ErrTableNotEmpty = errors.New("table is not empty")
+	logger             = log.New(log.Writer(), "data: ", log.Flags())
+	ErrTableNotEmpty   = errors.New("table is not empty")
+	ErrOpenInitFile    = errors.New("error opening init file")
+	ErrConnect         = errors.New("error connecting to database")
+	ErrConnectRedis    = errors.New("error connecting to redis")
+	ErrDBCreate        = errors.New("error creating table")
+	ErrDBDrop          = errors.New("error dropping table")
+	ErrDBInsert        = errors.New("error inserting into database")
+	ErrDBSelect        = errors.New("error selecting from database")
+	ErrDBUpdate        = errors.New("error updating database")
+	ErrDBDelete        = errors.New("error deleting from database")
+	ErrTxStart         = errors.New("error starting transaction")
+	ErrTxCommit        = errors.New("error committing transaction")
+	ErrTxRollback      = errors.New("error rolling back transaction")
+	ErrInvalidField    = errors.New("error invalid field type")
+	ErrNoArgs          = errors.New("error no arguments provided")
+	ErrInvalidArg      = errors.New("error invalid argument type")
+	ErrInvalidFunction = errors.New("error invalid db function type")
+	ErrParseConfig     = errors.New("error parsing config")
+	ErrBuildQuery      = errors.New("error building query")
+	ErrParseArgs       = errors.New("error parsing arguments")
 )
 
 const (
@@ -61,17 +80,18 @@ func NewConnectorWithConf(ctx context.Context, config *DataConfig) (*DataBase, e
 	// fmt.Println(config.ConnString())
 	poolConfig, err := pgxpool.ParseConfig(config.ConnString())
 	if err != nil {
-		logger.Println("error parsing database config: ", err)
-		return nil, err
+		logger.Println(err)
+		return nil, ErrParseConfig
 	}
 	db, err := pgxpool.NewWithConfig(ctx, poolConfig)
 	if err != nil {
-		return nil, err
+		logger.Println(err)
+		return nil, ErrConnect
 	}
 	err = db.Ping(ctx)
 	if err != nil {
-		logger.Println("error connecting to database: ", err)
-		return nil, err
+		logger.Println(err)
+		return nil, ErrConnect
 	}
 	logger.Println("connected to database")
 	dbConn := &DataBase{
@@ -82,8 +102,8 @@ func NewConnectorWithConf(ctx context.Context, config *DataConfig) (*DataBase, e
 	if config.UseCache {
 		cache, err := cache.NewConnectorWithConf(config.RedisConf)
 		if err != nil {
-			logger.Println("error connecting to redis: ", err)
-			return nil, err
+			logger.Println(err)
+			return nil, ErrConnectRedis
 		}
 		dbConn.cache = cache
 	}
@@ -101,6 +121,12 @@ func (db *DataBase) Disconnect() error {
 
 func (db *DataBase) Init() error {
 	logger.Println("initializing database")
+	file, err := os.Open(db.config.InitFile)
+	if err != nil {
+		logger.Println(err)
+		return ErrOpenInitFile
+	}
+	defer file.Close()
 	return nil
 }
 
@@ -110,7 +136,7 @@ func (db *DataBase) CreateTable(ctx context.Context, table string, fields []DBFi
 	_, err := db.transactionWrapper(ctx, CREATE, table, fields)
 	if err != nil {
 		logger.Println(err)
-		return errors.New("error creating table: " + table)
+		return ErrDBCreate
 	}
 	return nil
 }
@@ -121,8 +147,8 @@ func (db *DataBase) DeleteTable(ctx context.Context, table string) error {
 	// selecting to check if table is empty
 	row, err := db.Select(ctx, table, nil, nil, "LIMIT 1")
 	if err != nil {
-		logger.Println("error proof-selecting from table: ", err)
-		return err
+		logger.Println(err)
+		return ErrDBSelect
 	}
 	if len(row) > 0 {
 		return ErrTableNotEmpty
@@ -131,7 +157,7 @@ func (db *DataBase) DeleteTable(ctx context.Context, table string) error {
 	_, err = db.transactionWrapper(ctx, DROP, table)
 	if err != nil {
 		logger.Println(err)
-		return errors.New("error deleting table: " + table)
+		return ErrDBDrop
 	}
 	return nil
 }
@@ -141,7 +167,7 @@ func (db *DataBase) Select(ctx context.Context, table string, fields []FieldName
 	result, err := db.transactionWrapper(ctx, SELECT, table, fields, wm, args)
 	if err != nil {
 		logger.Println(err)
-		return nil, errors.New("error selecting from table: " + table)
+		return nil, ErrDBSelect
 	}
 	fmt.Printf("got data: %+v\n", result)
 	return result, nil
@@ -157,7 +183,7 @@ func (db *DataBase) Insert(ctx context.Context, table string, fields []FieldName
 	_, err := db.transactionWrapper(ctx, INSERT, table, fields, values)
 	if err != nil {
 		logger.Println(err)
-		return errors.New("error inserting into table: " + table)
+		return ErrDBInsert
 	}
 	return nil
 }
@@ -166,7 +192,8 @@ func (db *DataBase) Update(ctx context.Context, table string, updates map[FieldN
 	logger.Println("updating table: ", table)
 	_, err := db.transactionWrapper(ctx, UPDATE, table, updates, wm)
 	if err != nil {
-		return err
+		logger.Println(err)
+		return ErrDBUpdate
 	}
 	logger.Println("updated successfully")
 	return nil
@@ -176,7 +203,8 @@ func (db *DataBase) Delete(ctx context.Context, table string, wm *WhereMap) erro
 	logger.Println("deleting from table: ", table)
 	_, err := db.transactionWrapper(ctx, DELETE, table, wm)
 	if err != nil {
-		return err
+		logger.Println(err)
+		return ErrDBDelete
 	}
 	logger.Println("deleted successfully")
 	return nil
@@ -189,14 +217,14 @@ func (db *DataBase) transactionWrapper(ctx context.Context, dbFunction DBMethod,
 	if err != nil {
 		logger.Println(err)
 		if !errors.Is(err, ErrNoArgs) {
-			return nil, errors.New("error parsing arguments")
+			return nil, ErrParseArgs
 		}
 		logger.Println("no arguments passed")
 	}
 	query, err := buildQuery(dbFunction, table, parsedArgs)
 	if err != nil {
 		logger.Println(err)
-		return nil, errors.New("error building query")
+		return nil, ErrBuildQuery
 	}
 	if os.Getenv("ENVIROMENT") == "development" {
 		logger.Printf("query: %s", query)
@@ -204,7 +232,7 @@ func (db *DataBase) transactionWrapper(ctx context.Context, dbFunction DBMethod,
 	tx, err := db.pool.Begin(ctx)
 	if err != nil {
 		logger.Println(err)
-		return nil, errors.New("error starting transaction")
+		return nil, ErrTxStart
 	}
 	var tag pgconn.CommandTag
 	var rows DBResult
@@ -223,14 +251,14 @@ func (db *DataBase) transactionWrapper(ctx context.Context, dbFunction DBMethod,
 	if err != nil {
 		logger.Printf("error acting on table, rolling back;\n%s", err)
 		if e := tx.Rollback(ctx); e != nil {
-			logger.Println("error rolling back transaction: ", e)
-			return nil, e
+			logger.Println(e)
+			return nil, ErrTxRollback
 		}
 		return nil, err
 	}
 	if err = tx.Commit(ctx); err != nil {
-		logger.Println("error committing transaction: ", err)
-		return nil, err
+		logger.Println(err)
+		return nil, ErrTxCommit
 	}
 	logger.Println("transaction committed")
 	return rows, nil
@@ -239,7 +267,8 @@ func (db *DataBase) transactionWrapper(ctx context.Context, dbFunction DBMethod,
 func (db *DataBase) getData(ctx context.Context, tx pgx.Tx, query string) (DBResult, error) {
 	rows, err := tx.Query(ctx, query)
 	if err != nil {
-		return nil, err
+		logger.Println(err)
+		return nil, ErrDBSelect
 	}
 
 	dbFields := rows.FieldDescriptions()
@@ -249,7 +278,8 @@ func (db *DataBase) getData(ctx context.Context, tx pgx.Tx, query string) (DBRes
 		row := make(map[string]interface{}, len(dbFields))
 		val, err := rows.Values()
 		if err != nil {
-			return nil, err
+			logger.Println(err)
+			return nil, ErrDBSelect
 		}
 		for i, v := range val {
 			row[dbFields[i].Name] = v
@@ -271,10 +301,12 @@ func (db *DataBase) insert(ctx context.Context, tx pgx.Tx, table string, fields 
 		pgx.CopyFromRows(values),
 	)
 	if err != nil {
-		return err
+		logger.Println(err)
+		return ErrDBInsert
 	}
 	if copyCount != int64(len(values)) {
-		return errors.New("error inserting all values into table: " + table)
+		logger.Println("error inserting all values into table")
+		return ErrDBInsert
 	}
 	logger.Printf("inserted %d rows into %s", copyCount, table)
 	return nil
@@ -337,13 +369,6 @@ func buildQuery(dbFunction DBMethod, table string, args *QueryArgs) (string, err
 	sb.WriteString(";")
 	return sb.String(), nil
 }
-
-var (
-	ErrInvalidField    = errors.New("invalid field type")
-	ErrNoArgs          = errors.New("no arguments provided")
-	ErrInvalidArg      = errors.New("invalid argument type")
-	ErrInvalidFunction = errors.New("invalid db function type")
-)
 
 func parseArgs(dbFunction DBMethod, args []any) (*QueryArgs, error) {
 	logger.Println("parsing args")
