@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/mylogic207/PaT-CH/storage/cache"
 	"github.com/mylogic207/PaT-CH/system"
+	"gopkg.in/yaml.v3"
 )
 
 var (
@@ -66,6 +67,7 @@ type DataBase struct {
 	context context.Context
 	config  *DataConfig
 	cache   *cache.RedisConnector
+	Users   *UserDB
 }
 
 func NewConnector(ctx context.Context, config *system.ConfigMap, rc *system.ConfigMap) (*DataBase, error) {
@@ -102,6 +104,7 @@ func NewConnectorWithConf(ctx context.Context, config *DataConfig) (*DataBase, e
 		config:  config,
 		context: ctx,
 	}
+	dbConn.Users = &UserDB{p: dbConn}
 	if config.UseCache {
 		cache, err := cache.NewConnectorWithConf(config.RedisConf)
 		if err != nil {
@@ -130,25 +133,35 @@ func (db *DataBase) Init() error {
 		return ErrOpenInitFile
 	}
 	defer file.Close()
+	split := strings.Split(db.config.InitFile, ".")
+	suffix := split[len(split)-1]
 	var query string
-	if strings.HasSuffix(db.config.InitFile, "sql") {
-		logger.Println("warning: initializing database with sql file")
+	var val string
+	switch suffix {
+	case "sql":
+		logger.Println("warning: initializing database with raw sql file")
 		query = readSQL(file)
-	} else if strings.HasSuffix(db.config.InitFile, "json") {
+	case "json":
 		logger.Println("parsing DB initialization file")
-		if val, err := readJSON(file); err != nil {
-			logger.Println(err)
-			return ErrReadFile
-		} else {
+		if val, err = read(file, json.Unmarshal); err == nil {
 			query = val
 		}
-	} else {
+	case "yaml":
+		logger.Println("parsing DB initialization file")
+		if val, err = read(file, yaml.Unmarshal); err == nil {
+			query = val
+		}
+	default:
 		logger.Println("error: invalid file type")
 		return ErrOpenInitFile
 	}
+	if err != nil {
+		logger.Println(err)
+		return ErrReadFile
+	}
 
-	if os.Getenv("ENVIROMENT") == "DEVELOPMENT" {
-		logger.Println(strings.ReplaceAll(query, "; ", ";\n"))
+	if os.Getenv("ENVIRONMENT") == "DEVELOPMENT" {
+		logger.Println(strings.ReplaceAll(query, "\\ ", "\\\n"))
 
 	}
 
@@ -169,14 +182,18 @@ func readSQL(file *os.File) string {
 	return query
 }
 
-func readJSON(file *os.File) (string, error) {
+func read(file *os.File, parser func(data []byte, v any) error) (string, error) {
 	raw, err := os.ReadFile(file.Name())
 	if err != nil {
 		logger.Println(err)
 		return "", ErrReadFile
 	}
 	initStruct := &DBInit{}
-	json.Unmarshal(raw, initStruct)
+	err = parser(raw, initStruct)
+	if err != nil {
+		logger.Println(err)
+		return "", ErrReadFile
+	}
 	return initStruct.String(), nil
 }
 
@@ -378,7 +395,7 @@ func buildQuery(dbFunction DBMethod, table string, args *QueryArgs) (string, err
 	sb := strings.Builder{}
 	switch dbFunction {
 	case CREATE:
-		return fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (%s);", strings.ToLower(table), buildCreate(args.newFields)), nil
+		return fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s;", buildCreate(strings.ToLower(table), args.newFields)), nil
 	case DROP:
 		return fmt.Sprintf("DROP TABLE IF EXISTS %s;", table), nil
 	case DELETE:
@@ -493,18 +510,9 @@ func parseArgs(dbFunction DBMethod, args []any) (*QueryArgs, error) {
 	return nil, ErrInvalidFunction
 }
 
-func buildCreate(fields []DBField) string {
-	if len(fields) == 1 {
-		return fields[0].String()
-	}
-	sb := strings.Builder{}
-	for i, f := range fields {
-		sb.WriteString(f.String())
-		if i < len(fields)-1 {
-			sb.WriteString(", ")
-		}
-	}
-	return sb.String()
+func buildCreate(name string, fields []DBField) string {
+	table := DBTable{name, fields}
+	return table.String()
 }
 
 func buildUpdate(values map[FieldName]DBValue) string {
