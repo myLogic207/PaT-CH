@@ -83,44 +83,17 @@ type SessionResponse struct {
 	User    string `json:"user"`
 }
 
-func TestSessionAuth(t *testing.T) {
-	t.Log("Testing Session Middleware")
-	resp, err := http.DefaultClient.Post(TESTSERVER.Addr("/api/v1/auth/connect"), "application/json", nil)
-	fmt.Print("\n")
-	if err != nil {
-		t.Error(err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusCreated {
-		t.Errorf("Expected 201, got %d", resp.StatusCode)
-	}
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		t.Error(err)
-	}
-	if len(body) == 0 {
-		t.Error("Empty body")
-	}
-	t.Log(string(body))
-	response := SessionResponse{}
-	json.Unmarshal([]byte(body), &response)
-	if response.Message != "connected" {
-		t.Errorf("Expected 'connected', got '%s'", response.Message)
-	}
-	t.Log("Status Successful")
-}
-
 func TestSessionUser(t *testing.T) {
 	t.Log("Testing Session Middleware")
 	user := rawUser{
 		Username: "test",
 		Password: "test123",
 	}
-	body, err := json.Marshal(user)
+	login, err := json.Marshal(user)
 	if err != nil {
 		t.Error(err)
 	}
-	resp, err := http.DefaultClient.Post(TESTSERVER.Addr("/api/v1/register"), "application/json", strings.NewReader(string(body)))
+	resp, err := http.DefaultClient.Post(TESTSERVER.Addr("/api/v1/register"), "application/json", strings.NewReader(string(login)))
 	if err != nil {
 		t.Error(err)
 	}
@@ -129,7 +102,7 @@ func TestSessionUser(t *testing.T) {
 	if resp.StatusCode != http.StatusCreated {
 		t.Errorf("Expected 201, got %d", resp.StatusCode)
 	}
-	body, err = io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Error(err)
 	}
@@ -145,7 +118,18 @@ func TestSessionUser(t *testing.T) {
 	}
 	t.Log("Register Successful")
 
-	resp, err = http.DefaultClient.Post(TESTSERVER.Addr("/api/v1/auth/connect"), "application/json", strings.NewReader(string(body)))
+	resp, err = http.DefaultClient.Get(TESTSERVER.Addr("/api/v1/status"))
+	if err != nil {
+		t.Error(err)
+	}
+	fmt.Print("\n")
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("Expected 403, got %d", resp.StatusCode)
+		t.FailNow()
+	}
+
+	resp, err = http.DefaultClient.Post(TESTSERVER.Addr("/api/v1/auth/connect"), "application/json", strings.NewReader(string(login)))
 	if err != nil {
 		t.Error(err)
 	}
@@ -169,6 +153,17 @@ func TestSessionUser(t *testing.T) {
 		t.FailNow()
 	}
 	t.Log("Connect Successful")
+
+	// resp, err = http.DefaultClient.Get(TESTSERVER.Addr("/api/v1/status"))
+	// if err != nil {
+	// 	t.Error(err)
+	// }
+	// fmt.Print("\n")
+	// defer resp.Body.Close()
+	// if resp.StatusCode != http.StatusOK {
+	// 	t.Errorf("Expected 200, got %d", resp.StatusCode)
+	// 	t.FailNow()
+	// }
 
 	resp, err = http.DefaultClient.Get(TESTSERVER.Addr("/api/v1/auth/session"))
 	if err != nil {

@@ -37,11 +37,11 @@ func NewRouter(sessionCtl *SessionControl, cache sessions.Store) *gin.Engine {
 	}))
 	cache.Options(sessions.Options{
 		Path:     "/",
-		MaxAge:   60 * 3, // 3 minute
+		MaxAge:   60 * 60 * 1, // 1 hour
 		SameSite: http.SameSiteLaxMode,
 	})
 	router.Use(gin.Recovery())
-	router.Use(sessions.Sessions("mysession", cache))
+	router.Use(sessions.Sessions("patch_session", cache))
 
 	if os.Getenv("ENVIROMENT") == "development" {
 		router.Use(gin.Logger())
@@ -62,6 +62,7 @@ func addApiRoutes(api *gin.RouterGroup, sessionCtl *SessionControl) {
 func addV1Routes(v1 *gin.RouterGroup, sessionCtl *SessionControl) {
 	v1.GET("/health", routeHealth)
 	v1.POST("/register", sessionCtl.register)
+	v1.GET("/status", Status)
 	addAuthRoutes(v1.Group("/auth"), sessionCtl)
 	addUserRoutes(v1.Group("/user"), sessionCtl)
 }
@@ -80,8 +81,6 @@ func addUserRoutes(user *gin.RouterGroup, sessionCtl *SessionControl) {
 	user.GET("/", sessionCtl.GetUser)
 	user.POST("/", sessionCtl.UpdateUser)
 	user.DELETE("/", sessionCtl.DeleteUser)
-	user.GET("/status", Status)
-
 }
 
 // routes
@@ -103,13 +102,21 @@ func routeHealth(c *gin.Context) {
 
 func RoutePass(c *gin.Context) {
 	session := sessions.Default(c)
-	if session.Get("id") == nil && c.Request.URL.Path != apiConnectURL {
+	fmt.Println(session.Get("id"))
+	fmt.Println(c.Request.URL.Path)
+	if session.Get("id") == nil && (c.Request.URL.Path != apiConnectURL) {
 		c.JSON(http.StatusForbidden, gin.H{
 			"message": "unauthorized",
 		})
 		c.Abort()
+		return
+	} else if c.Request.URL.Path == apiConnectURL {
+		c.Next()
+		return
 	}
 	c.Set("id", session.Get("id"))
+	c.Set("username", session.Get("username"))
+	c.Next() // continue
 }
 
 func Status(c *gin.Context) {
@@ -121,16 +128,22 @@ func Status(c *gin.Context) {
 	} else {
 		c.JSON(http.StatusOK, gin.H{
 			"message": "connected",
+			"id":      session.Get("id").(string),
 		})
 	}
 }
 
 // GetID returns the id of the current user.
 func GetID(c *gin.Context) {
-	session := sessions.Default(c)
-	c.JSON(http.StatusOK, gin.H{
-		"id": session.Get("id").(string),
-	})
+	if id, ok := c.Get("id"); !ok {
+		c.JSON(http.StatusForbidden, gin.H{
+			"message": "disconnected",
+		})
+	} else {
+		c.JSON(http.StatusOK, gin.H{
+			"id": id.(string),
+		})
+	}
 }
 
 type ForwardPatch struct {

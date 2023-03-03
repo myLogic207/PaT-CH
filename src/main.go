@@ -142,7 +142,7 @@ func main() {
 	defer server.Stop()
 	log.Println("Server started")
 
-	time.Sleep(10 * time.Second)
+	time.Sleep(300 * time.Second)
 	// print("done")
 	mainStop()
 }
