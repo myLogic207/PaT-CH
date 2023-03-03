@@ -127,7 +127,7 @@ func main() {
 	if err != nil {
 		log.Fatalln("error while creating database connector: ", err)
 	}
-	server, err := api.NewServer(mainContext, apiConf, cacheConf)
+	server, err := api.NewServer(mainContext, database.Users, apiConf, cacheConf)
 	if err != nil {
 		log.Fatalln("error while creating server: ", err)
 	}
