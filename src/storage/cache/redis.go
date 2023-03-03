@@ -3,6 +3,7 @@ package cache
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 
 	"github.com/mylogic207/PaT-CH/system"
@@ -45,17 +46,43 @@ func (c *RedisConnector) Close() error {
 	return c.store.Close()
 }
 
-func (c *RedisConnector) Get(ctx context.Context, key string) (string, error) {
+func (c *RedisConnector) Get(ctx context.Context, key string) (interface{}, bool) {
 	// if Redis get from Redis
-	if c.active {
-		return c.store.Get(ctx, key).Result()
+	if !c.active {
+		logger.Println(errors.New("redis not active"))
 	}
-	return "", errors.New("redis not active")
+	if val, err := c.store.Get(ctx, key).Result(); err != nil {
+		logger.Println(err)
+		return "", false
+	} else {
+		return val, true
+	}
 }
 
-func (c *RedisConnector) Set(ctx context.Context, key string, value string) error {
-	if c.active {
-		return c.store.Set(ctx, key, value, 0).Err()
+func (c *RedisConnector) Set(ctx context.Context, key string, value interface{}) bool {
+	if !c.active {
+		logger.Println(errors.New("redis not active"))
+		return false
 	}
-	return errors.New("redis not active")
+	if val, err := c.store.Set(ctx, key, value, 0).Result(); err != nil {
+		logger.Println(err)
+		return false
+	} else {
+		fmt.Println(val)
+		return true
+	}
+}
+
+func (c *RedisConnector) Delete(ctx context.Context, key string) bool {
+	if !c.active {
+		logger.Println(errors.New("redis not active"))
+		return false
+	}
+	if val, err := c.store.Del(ctx, key).Result(); err != nil {
+		logger.Println(err)
+		return false
+	} else {
+		fmt.Println(val)
+		return true
+	}
 }

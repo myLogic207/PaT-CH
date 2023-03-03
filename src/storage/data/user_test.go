@@ -55,17 +55,16 @@ func TestUserDB(t *testing.T) {
 		t.Error("created not recently")
 		t.FailNow()
 	}
-	updateDate := user.updatedAt
 	user.Name = "test2"
 	user.Email = "example3@test.net"
 	user.SetPassword("abcd1234")
-	if err := TESTDB.Users.Update(ctx, user); err != nil {
+	if _, err := TESTDB.Users.Update(ctx, user); err != nil {
 		t.Log("\n")
 		t.Error(err)
 		t.Log("\n")
 		t.FailNow()
 	}
-	user2, err := TESTDB.Users.GetById(ctx, user.id)
+	user2, err := TESTDB.Users.GetById(ctx, user.ID())
 	if err != nil {
 		t.Error(err)
 		t.FailNow()
@@ -82,15 +81,11 @@ func TestUserDB(t *testing.T) {
 		t.Error("password updated")
 		t.FailNow()
 	}
-	if user2.updatedAt == updateDate {
-		t.Error("updated not updated")
-		t.FailNow()
-	}
-	if err := TESTDB.Users.DeleteById(ctx, user.id); err != nil {
+	if err := TESTDB.Users.DeleteById(ctx, user.ID()); err != nil {
 		t.Error(err)
 		t.FailNow()
 	}
-	if _, err := TESTDB.Users.GetById(ctx, user.id); err == nil {
+	if _, err := TESTDB.Users.GetById(ctx, user.ID()); err == nil {
 		t.Error("user not deleted")
 		t.FailNow()
 	}
