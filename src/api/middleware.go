@@ -53,20 +53,35 @@ func NewRouter(sessionCtl *SessionControl, cache sessions.Store) *gin.Engine {
 	return router
 }
 
+// /api routes
 func addApiRoutes(api *gin.RouterGroup, sessionCtl *SessionControl) {
 	addV1Routes(api.Group("/v1"), sessionCtl)
 }
 
+// /api/v1 routes
 func addV1Routes(v1 *gin.RouterGroup, sessionCtl *SessionControl) {
 	v1.GET("/health", routeHealth)
+	v1.POST("/register", sessionCtl.register)
 	addAuthRoutes(v1.Group("/auth"), sessionCtl)
+	addUserRoutes(v1.Group("/user"), sessionCtl)
 }
 
+// /api/v1/auth routes
 func addAuthRoutes(auth *gin.RouterGroup, sessionCtl *SessionControl) {
 	auth.Use(RoutePass)
 	auth.POST("/connect", sessionCtl.Connect)
 	auth.POST("/disconnect", sessionCtl.Disonnect)
 	auth.GET("/session", GetID)
+}
+
+// /api/v1/user routes
+func addUserRoutes(user *gin.RouterGroup, sessionCtl *SessionControl) {
+	user.Use(RoutePass)
+	user.GET("/", sessionCtl.GetUser)
+	user.POST("/", sessionCtl.UpdateUser)
+	user.DELETE("/", sessionCtl.DeleteUser)
+	user.GET("/status", Status)
+
 }
 
 // routes

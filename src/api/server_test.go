@@ -10,7 +10,7 @@ import (
 
 func TestNewServer(t *testing.T) {
 	t.Log("Testing NewServer")
-	server, err := NewServerWithConf(context.Background(), &ApiConfig{
+	server, err := NewServerWithConf(context.Background(), NewUserIMDB(), &ApiConfig{
 		Host:  "localhost",
 		Port:  3080,
 		Redis: false,

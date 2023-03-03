@@ -9,6 +9,7 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -23,7 +24,7 @@ func startTestServer() *Server {
 	log.Println("Starting Test Server")
 	ctx := context.Background()
 	gin.SetMode(gin.ReleaseMode)
-	s, err := NewServerWithConf(ctx, &ApiConfig{
+	s, err := NewServerWithConf(ctx, NewUserIMDB(), &ApiConfig{
 		Host:  "127.0.0.1",
 		Port:  3080 + randomOffset(),
 		Redis: false,
@@ -78,6 +79,8 @@ func TestSessionNonAuth(t *testing.T) {
 
 type SessionResponse struct {
 	Message string `json:"message"`
+	Id      string `json:"id"`
+	User    string `json:"user"`
 }
 
 func TestSessionAuth(t *testing.T) {
@@ -105,4 +108,115 @@ func TestSessionAuth(t *testing.T) {
 		t.Errorf("Expected 'connected', got '%s'", response.Message)
 	}
 	t.Log("Status Successful")
+}
+
+func TestSessionUser(t *testing.T) {
+	t.Log("Testing Session Middleware")
+	user := rawUser{
+		Username: "test",
+		Password: "test123",
+	}
+	body, err := json.Marshal(user)
+	if err != nil {
+		t.Error(err)
+	}
+	resp, err := http.DefaultClient.Post(TESTSERVER.Addr("/api/v1/register"), "application/json", strings.NewReader(string(body)))
+	if err != nil {
+		t.Error(err)
+	}
+	fmt.Print("\n")
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		t.Errorf("Expected 201, got %d", resp.StatusCode)
+	}
+	body, err = io.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+	if len(body) == 0 {
+		t.Error("Empty body")
+	}
+	t.Log(string(body))
+	response := SessionResponse{}
+	json.Unmarshal([]byte(body), &response)
+	if response.Message != "registered" {
+		t.Errorf("Expected 'registered', got '%s'", response.Message)
+		t.FailNow()
+	}
+	t.Log("Register Successful")
+
+	resp, err = http.DefaultClient.Post(TESTSERVER.Addr("/api/v1/auth/connect"), "application/json", strings.NewReader(string(body)))
+	if err != nil {
+		t.Error(err)
+	}
+	fmt.Print("\n")
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		t.Errorf("Expected 201, got %d", resp.StatusCode)
+		t.FailNow()
+	}
+	body, err = io.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+	if len(body) == 0 {
+		t.Error("Empty body")
+	}
+	t.Log(string(body))
+	json.Unmarshal([]byte(body), &response)
+	if response.Message != "connected" {
+		t.Errorf("Expected 'connected', got '%s'", response.Message)
+		t.FailNow()
+	}
+	t.Log("Connect Successful")
+
+	resp, err = http.DefaultClient.Get(TESTSERVER.Addr("/api/v1/auth/session"))
+	if err != nil {
+		t.Error(err)
+	}
+	fmt.Print("\n")
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("Expected 200, got %d", resp.StatusCode)
+		t.FailNow()
+	}
+	body, err = io.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+	if len(body) == 0 {
+		t.Error("Empty body")
+	}
+	t.Log(string(body))
+	json.Unmarshal([]byte(body), &response)
+	if response.Message != "connected" {
+		t.Errorf("Expected 'connected', got '%s'", response.Message)
+	}
+	if response.User != user.Username {
+		t.Errorf("Expected '%s', got '%s'", user.Username, response.User)
+	}
+	t.Log("Status Successful")
+
+	resp, err = http.DefaultClient.Post(TESTSERVER.Addr("/api/v1/user/delete"), "application/json", nil)
+	if err != nil {
+		t.Error(err)
+	}
+	fmt.Print("\n")
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("Expected 200, got %d", resp.StatusCode)
+	}
+	body, err = io.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+	if len(body) == 0 {
+		t.Error("Empty body")
+	}
+	t.Log(string(body))
+	json.Unmarshal([]byte(body), &response)
+	if response.Message != "deleted" {
+		t.Errorf("Expected 'deleted', got '%s'", response.Message)
+	}
+	t.Log("Delete Successful")
 }

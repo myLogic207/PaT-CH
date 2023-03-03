@@ -37,15 +37,15 @@ type Server struct {
 	running    bool
 }
 
-func NewServer(ctx context.Context, config *system.ConfigMap, rc *system.ConfigMap) (*Server, error) {
+func NewServer(ctx context.Context, db UserTable, config *system.ConfigMap, rc *system.ConfigMap) (*Server, error) {
 	conf, err := ParseConf(config, rc)
 	if err != nil {
 		logger.Println(err)
 	}
-	return NewServerWithConf(ctx, conf)
+	return NewServerWithConf(ctx, db, conf)
 }
 
-func NewServerWithConf(ctx context.Context, config *ApiConfig) (*Server, error) {
+func NewServerWithConf(ctx context.Context, db UserTable, config *ApiConfig) (*Server, error) {
 	var cache redis.Store
 	if config.Redis {
 		logger.Println("Using Redis Cache")
@@ -59,21 +59,21 @@ func NewServerWithConf(ctx context.Context, config *ApiConfig) (*Server, error) 
 		logger.Println("No cache provided, using cookie fallback")
 		cache = cookie.NewStore([]byte("secret"))
 	}
-	return NewServerWithCacheConf(ctx, config, cache)
+	return NewServerWithCacheConf(ctx, db, config, cache)
 }
 
-func NewServerWithCache(ctx context.Context, conf *system.ConfigMap, cache sessions.Store) (*Server, error) {
+func NewServerWithCache(ctx context.Context, db UserTable, conf *system.ConfigMap, cache sessions.Store) (*Server, error) {
 	config, err := ParseConf(conf, nil)
 	if err != nil {
 		logger.Println(err)
 	}
-	return NewServerWithCacheConf(ctx, config, cache)
+	return NewServerWithCacheConf(ctx, db, config, cache)
 }
 
 // Actual server creation
-func NewServerWithCacheConf(ctx context.Context, config *ApiConfig, cache sessions.Store) (*Server, error) {
+func NewServerWithCacheConf(ctx context.Context, db UserTable, config *ApiConfig, cache sessions.Store) (*Server, error) {
 	config.init()
-	sessionCtl := NewSessionControl()
+	sessionCtl := NewSessionControl(db)
 	router := NewRouter(sessionCtl, cache)
 
 	server := &http.Server{
