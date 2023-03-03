@@ -28,13 +28,13 @@ func (m *WhereMap) String() string {
 	}
 	if len(m.clauses) == 1 {
 		for k, v := range m.clauses {
-			return fmt.Sprintf("%s = '%s'", strings.ToLower(string(k)), v)
+			return fmt.Sprintf("%s = '%s'", strings.ToLower(fmt.Sprint(k)), fmt.Sprint(v))
 		}
 	}
 	sb := strings.Builder{}
 	counter := 0
 	for k, v := range m.clauses {
-		sb.WriteString(fmt.Sprintf("%s = '%s' AND", strings.ToLower(string(k)), v))
+		sb.WriteString(fmt.Sprintf("%s = '%s' AND", strings.ToLower(fmt.Sprint(k)), fmt.Sprint(v)))
 		counter++
 	}
 	return sb.String()

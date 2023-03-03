@@ -104,7 +104,7 @@ func NewConnectorWithConf(ctx context.Context, config *DataConfig) (*DataBase, e
 		config:  config,
 		context: ctx,
 	}
-	dbConn.Users = &UserDB{p: dbConn}
+	dbConn.Users = NewUserDB(dbConn, "users")
 	if config.UseCache {
 		cache, err := cache.NewConnectorWithConf(config.RedisConf)
 		if err != nil {
@@ -399,9 +399,9 @@ func buildQuery(dbFunction DBMethod, table string, args *QueryArgs) (string, err
 	case DROP:
 		return fmt.Sprintf("DROP TABLE IF EXISTS %s;", table), nil
 	case DELETE:
-		sb.WriteString(fmt.Sprintf("DELETE FROM %s ", table))
+		sb.WriteString(fmt.Sprint("DELETE FROM ", table))
 		if args.wm != nil {
-			sb.WriteString(args.wm.String())
+			sb.WriteString(fmt.Sprint(" WHERE ", args.wm.String()))
 		}
 	case SELECT:
 		sb.WriteString("SELECT ")
@@ -415,13 +415,13 @@ func buildQuery(dbFunction DBMethod, table string, args *QueryArgs) (string, err
 				}
 			}
 		}
-		sb.WriteString(fmt.Sprintf(" FROM %s ", table))
+		sb.WriteString(fmt.Sprint(" FROM ", table))
 		if args.wm != nil {
-			sb.WriteString("WHERE ")
+			sb.WriteString(" WHERE ")
 			sb.WriteString(args.wm.String())
 		}
 		if args.args != "" {
-			sb.WriteString(args.args)
+			sb.WriteString(fmt.Sprint(" ", args.args))
 		}
 	case UPDATE:
 		sb.WriteString(fmt.Sprintf("UPDATE %s SET ", table))
@@ -519,7 +519,7 @@ func buildUpdate(values map[FieldName]DBValue) string {
 	buffer := make([]string, len(values))
 	counter := 0
 	for k, v := range values {
-		buffer[counter] = fmt.Sprintf("%s = '%s'", strings.ToLower(string(k)), v)
+		buffer[counter] = fmt.Sprintf("%s = '%s'", strings.ToLower(fmt.Sprint(k)), fmt.Sprint(v))
 		counter++
 	}
 	return join(buffer, ", ")
