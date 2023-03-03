@@ -11,12 +11,25 @@ import (
 var ctx context.Context = context.Background()
 var TESTDB *DataBase
 
+func nameExt() string {
+	namext, err := rand.Prime(rand.Reader, 64)
+	if err != nil {
+		panic(err)
+	}
+	return namext.String()
+}
+
+func tableName(name string) string {
+	return fmt.Sprintf("%s_%s", name, nameExt())
+}
+
 func TestMain(m *testing.M) {
 	// config := DefaultConfig()
 	config := &DataConfig{
-		Host:     "patch-test-6310.7tc.cockroachlabs.cloud",
-		Port:     26257,
-		User:     "patch",
+		Host: "patch-test-6310.7tc.cockroachlabs.cloud",
+		Port: 26257,
+		User: "patch",
+		// TODO: REMOVE THE FUCKING PASSWORD FROM THE SOURCE CODE
 		password: "MDuKbW__xZs3guKrlK-AdA",
 		DBname:   "patch_db_test",
 		SSLmode:  "verify-full",
@@ -30,12 +43,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestTableInsert(t *testing.T) {
-	namext, err := rand.Prime(rand.Reader, 64)
-	if err != nil {
-		t.Error(err)
-		t.FailNow()
-	}
-	tableName := fmt.Sprintf("test_%s", namext)
+	tableName := tableName("test_table")
 	if err := TESTDB.CreateTable(ctx, tableName, []DBField{
 		{"testKey", "text", 0, "PRIMARY KEY"},
 		{"testValue", "text", 0, ""},
@@ -90,12 +98,7 @@ func TestTableInsert(t *testing.T) {
 }
 
 func TestUpdate(t *testing.T) {
-	ext, err := rand.Prime(rand.Reader, 64)
-	if err != nil {
-		t.Error(err)
-		t.FailNow()
-	}
-	tableName := fmt.Sprintf("test_update_%s", ext)
+	tableName := tableName("test_table")
 	if err := TESTDB.CreateTable(ctx, tableName, []DBField{
 		{"testKey", "text", 0, "PRIMARY KEY"},
 		{"testValue", "text", 0, ""},
@@ -145,12 +148,7 @@ func TestUpdate(t *testing.T) {
 }
 
 func TestTable(t *testing.T) {
-	ext, err := rand.Prime(rand.Reader, 64)
-	if err != nil {
-		t.Error(err)
-		t.FailNow()
-	}
-	tableName := fmt.Sprintf("test_delete_%s", ext)
+	tableName := fmt.Sprintf("test_delete_%s", nameExt())
 	if err := TESTDB.CreateTable(ctx, tableName, []DBField{
 		{"testKey", "text", 0, "PRIMARY KEY"},
 		{"testValue", "text", 0, ""},
