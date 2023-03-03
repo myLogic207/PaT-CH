@@ -17,6 +17,13 @@ type RedisConnector struct {
 	store  *redis.Client
 }
 
+func NewStubConnector() *RedisConnector {
+	return &RedisConnector{
+		store:  nil,
+		active: false,
+	}
+}
+
 func NewConnector(config *system.ConfigMap) (*RedisConnector, error) {
 	redisConfig, err := ParseConf(config)
 	if err != nil {
@@ -38,11 +45,13 @@ func NewConnectorWithConf(config *RedisConfig) (*RedisConnector, error) {
 	}
 	logger.Println(status.String())
 	return &RedisConnector{
-		store: connection,
+		store:  connection,
+		active: true,
 	}, nil
 }
 
 func (c *RedisConnector) Close() error {
+	c.active = false
 	return c.store.Close()
 }
 
@@ -50,6 +59,7 @@ func (c *RedisConnector) Get(ctx context.Context, key string) (interface{}, bool
 	// if Redis get from Redis
 	if !c.active {
 		logger.Println(errors.New("redis not active"))
+		return "", false
 	}
 	if val, err := c.store.Get(ctx, key).Result(); err != nil {
 		logger.Println(err)

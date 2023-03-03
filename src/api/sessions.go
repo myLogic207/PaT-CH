@@ -14,6 +14,7 @@ const id_bytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890
 
 var (
 	ErrRegister = fmt.Errorf("error registering user")
+	ErrConnect  = fmt.Errorf("error connecting user")
 )
 
 type SessionControl struct {
@@ -85,20 +86,29 @@ type rawUser struct {
 
 func (s *SessionControl) Connect(c *gin.Context) {
 	var raw rawUser
-	if err := c.ShouldBindJSON(&raw); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if err := c.BindJSON(&raw); err != nil {
+		logger.Println(err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": ErrConnect})
+		c.Abort()
 		return
 	}
 	user, err := s.db.Authenticate(c, raw.Username, raw.Password)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		logger.Println(err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": ErrConnect})
+		c.Abort()
 		return
 	}
 	session := sessions.Default(c)
-	session.Set("user", user)
-	id := s.getNewId()
-	session.Set("id", id)
-	session.Save()
+	session.Clear()
+	session.Set("username", user.Name)
+	session.Set("id", s.getNewId())
+	if err := session.Save(); err != nil {
+		logger.Println(err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": ErrConnect})
+		c.Abort()
+		return
+	}
 	c.JSON(http.StatusCreated, gin.H{
 		"message": "connected",
 		// "id":      id,
@@ -138,7 +148,7 @@ func (s *SessionControl) GetUser(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"user": session.Get("user"),
+		"user": session.Get("username"),
 	})
 }
 
@@ -170,11 +180,15 @@ func (s *SessionControl) DeleteUser(c *gin.Context) {
 		})
 		return
 	}
-	user := session.Get("user").(system.User)
-	if err := s.db.DeleteByName(c, user.Name); err != nil {
+	var username string
+	if val, ok := session.Get("username").(string); ok {
+		username = val
+	}
+	if err := s.db.DeleteByName(c, username); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	session.Clear()
 	c.JSON(http.StatusOK, gin.H{
 		"message": "deleted",
 	})

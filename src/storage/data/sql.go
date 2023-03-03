@@ -98,7 +98,6 @@ func NewConnectorWithConf(ctx context.Context, config *DataConfig) (*DataBase, e
 		logger.Println(err)
 		return nil, ErrConnect
 	}
-	logger.Println("connected to database")
 	dbConn := &DataBase{
 		pool:    db,
 		config:  config,
@@ -112,7 +111,10 @@ func NewConnectorWithConf(ctx context.Context, config *DataConfig) (*DataBase, e
 			return nil, ErrConnectRedis
 		}
 		dbConn.cache = cache
+	} else {
+		dbConn.cache = cache.NewStubConnector()
 	}
+	logger.Println("connected to database")
 	return dbConn, nil
 }
 
