@@ -19,8 +19,21 @@ type User struct {
 	password  string
 }
 
+func NewUser(name, email, password string) *User {
+	return &User{
+		Name:      name,
+		Email:     email,
+		CreatedAt: time.Now().UTC(),
+		password:  HashPassword(password),
+	}
+}
+
 func (u *User) ID() int64 {
 	return u.id
+}
+
+func (u *User) SetID(id int64) {
+	u.id = id
 }
 
 func (u *User) CheckPassword(password string) bool {
