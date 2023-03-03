@@ -102,7 +102,7 @@ func (s *Server) Start() error {
 			logger.Fatalln(err)
 		}
 	}()
-	logger.Println("Serving http on " + s.config.Addr())
+	logger.Println("Serving http on " + s.Addr("/"))
 	// TODO: Add https support (as secondary server)
 	// if s.config.SPort == 0 || s.config.CertFile == "" || s.config.KeyFile == "" {
 	// 	return ErrStartServer
