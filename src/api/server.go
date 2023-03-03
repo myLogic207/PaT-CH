@@ -7,6 +7,8 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
+	"strings"
 
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-contrib/sessions/cookie"
@@ -24,6 +26,7 @@ var (
 	ErrConnectionRefused = errors.New("connection refused")
 	ErrStartServer       = errors.New("server starting")
 	ErrStopServer        = errors.New("could not stop server")
+	ErrInitServer        = errors.New("could not initialize server")
 )
 
 type keyServerAddr string
@@ -92,6 +95,62 @@ func NewServerWithCacheConf(ctx context.Context, db UserTable, config *ApiConfig
 		sessionCtl: sessionCtl,
 		running:    false,
 	}, nil
+}
+
+func (s *Server) Init() error {
+	file, err := os.Open(s.config.InitFile)
+	if err != nil {
+		logger.Println(err)
+		return ErrInitServer
+	}
+	defer file.Close()
+	// if folder, if file, if not exist, create
+	var info os.FileInfo
+	if info, err = file.Stat(); err != nil {
+		logger.Println("Init file is a directory")
+		return ErrInitServer
+	}
+	if info.IsDir() {
+		files, err := os.ReadDir(s.config.InitFile)
+		if err != nil {
+			logger.Println(err)
+			return ErrInitServer
+		}
+		for _, f := range files {
+			if f.IsDir() {
+				continue
+			}
+			info, err := f.Info()
+			if err != nil {
+				logger.Println(err)
+				continue
+			}
+			if err := loadInitFile(fmt.Sprint(s.config.InitFile, string(os.PathSeparator), info.Name()), s.sessionCtl); err != nil {
+				logger.Println(err)
+				return ErrInitServer
+			}
+		}
+		return nil
+	}
+	return loadInitFile(s.config.InitFile, s.sessionCtl)
+}
+
+func loadInitFile(path string, sessionCtl *SessionControl) error {
+	if !strings.HasSuffix(path, ".json") {
+		return errors.New("not a json file: " + path)
+	}
+	logger.Println("Loading init file: " + path)
+	cont, err := os.ReadFile(path)
+	if err != nil {
+		logger.Println(err)
+		return errors.New("could not read file: " + path)
+	}
+	patches, err := ParsePatches(string(cont))
+	if err != nil {
+		logger.Println(err)
+		return errors.New("could not parse file: " + path)
+	}
+	return patches.Apply()
 }
 
 func (s *Server) Start() error {

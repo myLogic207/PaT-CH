@@ -136,6 +136,7 @@ func main() {
 	if err := database.Init(); err != nil {
 		log.Fatalln("error while initializing database: ", err)
 	}
+	server.Init()
 	if err := server.Start(); err != api.ErrStartServer {
 		log.Fatalln("error while starting server: ", err)
 	}

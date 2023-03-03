@@ -63,6 +63,7 @@ func addV1Routes(v1 *gin.RouterGroup, sessionCtl *SessionControl) {
 	v1.GET("/health", routeHealth)
 	v1.POST("/register", sessionCtl.register)
 	v1.GET("/status", Status)
+	v1.GET("/foward/:dest", getForward)
 	addAuthRoutes(v1.Group("/auth"), sessionCtl)
 	addUserRoutes(v1.Group("/user"), sessionCtl)
 }
@@ -73,6 +74,7 @@ func addAuthRoutes(auth *gin.RouterGroup, sessionCtl *SessionControl) {
 	auth.POST("/connect", sessionCtl.Connect)
 	auth.POST("/disconnect", sessionCtl.Disonnect)
 	auth.GET("/session", GetID)
+	auth.PATCH("/forward", addForward)
 }
 
 // /api/v1/user routes
@@ -144,15 +146,6 @@ func GetID(c *gin.Context) {
 			"id": id.(string),
 		})
 	}
-}
-
-type ForwardPatch struct {
-	Path string `json:"path"`
-	Dest string `json:"dest"`
-}
-
-func addForward(c *gin.Context) {
-	// TODO: add forward patch
 }
 
 // Middleware

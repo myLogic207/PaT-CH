@@ -14,6 +14,7 @@ type ApiConfig struct {
 	Port       uint16 `json:"http_port"`
 	SPort      uint16 `json:"https_port"` // only used if secure is true
 	PortOffset uint16 `json:"port_offset"`
+	InitFile   string `json:"init_file"`
 	CertFile   string `json:"cert_file"` // only used if secure is true
 	KeyFile    string `json:"key_file"`  // only used if secure is true
 	Redis      bool   `json:"redis"`
@@ -26,6 +27,7 @@ func DefaultConfig() *ApiConfig {
 		Port:       80,
 		SPort:      443,
 		PortOffset: 0,
+		InitFile:   "",
 		CertFile:   "",
 		KeyFile:    "",
 		Redis:      false,
@@ -50,6 +52,9 @@ func (c *ApiConfig) init() error {
 	}
 	if c.PortOffset == 0 {
 		logger.Println("could not determine port offset, using none")
+	}
+	if c.InitFile == "" {
+		logger.Println("could not determine init file, using none")
 	}
 	if c.Redis {
 		if c.RedisConf.Host == "" {
@@ -97,6 +102,10 @@ func ParseConf(toConf *system.ConfigMap, rc *system.ConfigMap) (*ApiConfig, erro
 		} else {
 			config.PortOffset = uint16(p)
 		}
+	}
+
+	if val, ok := toConf.Get("initfile"); ok {
+		config.InitFile = val
 	}
 
 	if val, ok := toConf.Get("certfile"); ok {
