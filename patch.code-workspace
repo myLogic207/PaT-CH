@@ -6,27 +6,9 @@
     ],
 	"settings": {
 		"cSpell.words": [
-            "godotenv",
-            "joho",
-            "pgxpool",
-            "redisdb"
-        ],
-        "sqltools.connections": [
-            {
-                "pgOptions": {
-                    "ssl": {
-                        "requestCert": false
-                    }
-                },
-                "previewLimit": 50,
-                "server": "patch-test-6310.7tc.cockroachlabs.cloud",
-                "port": 26257,
-                "askForPassword": true,
-                "driver": "CockroachDB",
-                "name": "patch-test",
-                "database": "patch_db",
-                "username": "patch"
-            }
-        ]
+			"godotenv",
+			"joho",
+			"redisdb"
+		]
 	}
 }
