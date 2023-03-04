@@ -1,7 +1,14 @@
 {
-    "folders": [
-        {
-            "path": "."
-        }
-    ]
+	"folders": [
+		{
+			"path": "."
+		}
+    ],
+	"settings": {
+		"cSpell.words": [
+			"godotenv",
+			"joho",
+			"redisdb"
+		]
+	}
 }

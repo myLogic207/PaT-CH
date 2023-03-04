@@ -1,0 +1,8 @@
+{
+    "name": "patch-service",
+    "dockerComposeFile": "docker-compose.yml",
+    "service": "patch",
+    "workspaceFolder": "/development",
+    "shutdownAction": "stopCompose",
+    "forwardPorts": [2080, 2443]
+}
