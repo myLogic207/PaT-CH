@@ -2,6 +2,7 @@ package data
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -70,8 +71,8 @@ func (udb *UserDB) GetAll(ctx context.Context) ([]*system.User, error) {
 }
 
 func (udb *UserDB) GetByName(ctx context.Context, name string) (*system.User, error) {
-	if val, ok := udb.p.cache.Get(ctx, name); ok {
-		return val.(*system.User), nil
+	if val, ok := udb.GetFromCache(ctx, name); ok {
+		return val, nil
 	}
 	val, err := udb.p.Select(ctx, udb.usertable, []FieldName{"*"}, NewWhereMap(map[FieldName]interface{}{"name": name}), "LIMIT 1")
 	if err != nil {
@@ -90,8 +91,8 @@ func (udb *UserDB) GetByName(ctx context.Context, name string) (*system.User, er
 }
 
 func (udb *UserDB) GetByEmail(ctx context.Context, email string) (*system.User, error) {
-	if val, ok := udb.p.cache.Get(ctx, email); ok {
-		return val.(*system.User), nil
+	if val, ok := udb.GetFromCache(ctx, email); ok {
+		return val, nil
 	}
 	val, err := udb.p.Select(ctx, udb.usertable, []FieldName{"*"}, NewWhereMap(map[FieldName]interface{}{"email": email}), "LIMIT 1")
 	if err != nil {
@@ -110,8 +111,8 @@ func (udb *UserDB) GetByEmail(ctx context.Context, email string) (*system.User, 
 }
 
 func (udb *UserDB) GetById(ctx context.Context, id int64) (*system.User, error) {
-	if val, ok := udb.p.cache.Get(ctx, fmt.Sprint("user", id)); ok {
-		return val.(*system.User), nil
+	if val, ok := udb.GetFromCache(ctx, id); ok {
+		return val, nil
 	}
 	val, err := udb.p.Select(ctx, udb.usertable, []FieldName{"*"}, NewWhereMap(map[FieldName]interface{}{"id": id}), "LIMIT 1")
 	if err != nil {
@@ -194,14 +195,32 @@ func (udb *UserDB) AuthenticateByEmail(ctx context.Context, email string, passwo
 	return user, nil
 }
 
+func (udb *UserDB) GetFromCache(ctx context.Context, key interface{}) (*system.User, bool) {
+	// if val, ok := usb.p.cache.Get(ctx, name); ok {
+	// 	return val.(*system.User), nil
+	// }
+	// return nil, ErrNoUser
+	if val, ok := udb.p.cache.Get(ctx, fmt.Sprint("user_", key)); ok {
+		user := system.User{}
+		if s, ok := val.(string); ok {
+			if err := json.Unmarshal([]byte(s), &user); err != nil {
+				logger.Println(err)
+				return nil, false
+			}
+		}
+		return &user, true
+	}
+	return nil, false
+}
+
 func (udb *UserDB) updateCache(ctx context.Context, user *system.User) {
-	udb.p.cache.Set(ctx, user.Name, user)
-	udb.p.cache.Set(ctx, user.Email, user)
-	udb.p.cache.Set(ctx, fmt.Sprint("user", user.ID()), user)
+	udb.p.cache.Set(ctx, fmt.Sprint("user_", user.Name), user)
+	udb.p.cache.Set(ctx, fmt.Sprint("user_", user.Email), user)
+	udb.p.cache.Set(ctx, fmt.Sprint("user_", user.ID()), user)
 }
 
 func (udb *UserDB) clearCache(ctx context.Context, user *system.User) {
-	udb.p.cache.Delete(ctx, user.Name)
-	udb.p.cache.Delete(ctx, user.Email)
-	udb.p.cache.Delete(ctx, fmt.Sprint("user", user.ID()))
+	udb.p.cache.Delete(ctx, fmt.Sprint("user_", user.Name))
+	udb.p.cache.Delete(ctx, fmt.Sprint("user_", user.Email))
+	udb.p.cache.Delete(ctx, fmt.Sprint("user_", user.ID()))
 }

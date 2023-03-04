@@ -8,6 +8,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -18,19 +19,55 @@ var (
 	ErrApplyPatch = errors.New("failed to apply patch")
 )
 
+// /api/v1/auth/patch routes
+func addPatchRoutes(patch *gin.RouterGroup) {
+	patch.PATCH("", applyPatch)
+	patch.GET("", getPatch)
+	patch.GET("/:dest", getPatch)
+	patch.DELETE("/:dest", deletePatch)
+}
+
 type ForwardPatch struct {
 	Path string `json:"path"`
 	Dest string `json:"dest"`
 }
 
-func addForward(c *gin.Context) {
+func getPatch(c *gin.Context) {
+	path := c.Param("dest")
+	if path == "" {
+		c.JSON(http.StatusOK, pathTable)
+		return
+	}
+	if dest, ok := pathTable[path]; ok {
+		c.JSON(http.StatusOK, dest)
+		return
+	}
+	c.JSON(http.StatusNotFound, gin.H{"error": "path not found"})
+}
+
+func deletePatch(c *gin.Context) {
+	path := c.Param("dest")
+	if path == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "path cannot be empty"})
+		return
+	}
+	if _, ok := pathTable[path]; ok {
+		delete(pathTable, path)
+		c.JSON(http.StatusOK, gin.H{"message": "path deleted"})
+		return
+	}
+	c.JSON(http.StatusNotFound, gin.H{"error": "path not found"})
+}
+
+func applyPatch(c *gin.Context) {
 	var patch ForwardPatch
 	if err := c.ShouldBindJSON(&patch); err != nil {
 		logger.Println(err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": ErrApplyPatch})
 		return
 	}
-	if err := applyPath(patch.Path, patch.Dest); err != nil {
+	logger.Println("applying patch via api")
+	if err := registerPath(patch.Path, patch.Dest); err != nil {
 		logger.Println(err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": ErrApplyPatch})
 		return
@@ -38,7 +75,8 @@ func addForward(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "patch applied"})
 }
 
-func applyPath(path, dest string) error {
+func registerPath(path, dest string) error {
+	path = sanitizePath(path)
 	if _, ok := pathTable[path]; ok {
 		return errors.New("path already exists")
 	}
@@ -50,6 +88,11 @@ func applyPath(path, dest string) error {
 	logger.Printf("Adding path %s -> %s\n", path, dest)
 	pathTable[path] = url
 	return nil
+}
+
+func sanitizePath(path string) string {
+	path = strings.TrimPrefix(path, "/")
+	return path
 }
 
 func validatePath(rawurl string) (*url.URL, error) {
@@ -83,7 +126,7 @@ func validatePath(rawurl string) (*url.URL, error) {
 	return url, nil
 }
 
-func getForward(c *gin.Context) {
+func ForwardRequest(c *gin.Context) {
 	logger.Println("Forwarding request...")
 	path := c.Param("dest")
 	dest, ok := pathTable[path]
@@ -133,7 +176,7 @@ func (p PatchList) Apply() error {
 		fmt.Printf("Patches: %v\n", p.Patches)
 	}
 	for _, patch := range p.Patches {
-		if err := applyPath(patch.Path, patch.Dest); err != nil {
+		if err := registerPath(patch.Path, patch.Dest); err != nil {
 			return err
 		}
 	}
