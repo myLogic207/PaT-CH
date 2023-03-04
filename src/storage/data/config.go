@@ -113,9 +113,17 @@ func parseConfig(rawConf *system.ConfigMap, rc *system.ConfigMap) (*DataConfig, 
 	if val, ok := rawConf.Get("connlifetime"); ok {
 		conf.ConnLifetime = val
 	}
-	var err error
-	if conf.RedisConf, err = cache.ParseConf(rc); err != nil {
-		return nil, err
+	if val, ok := rawConf.Get("usecache"); ok && val == "true" {
+		var err error
+		conf.UseCache = true
+		if conf.RedisConf, err = cache.ParseConf(rc); err != nil {
+			return nil, err
+		}
+	} else {
+		conf.UseCache = false
+	}
+	if val, ok := rawConf.Get("initfile"); ok {
+		conf.InitFile = val
 	}
 	return conf, nil
 }

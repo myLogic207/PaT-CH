@@ -65,6 +65,7 @@ func (c *RedisConnector) Get(ctx context.Context, key string) (interface{}, bool
 		logger.Println(err)
 		return "", false
 	} else {
+		fmt.Println(val)
 		return val, true
 	}
 }

@@ -1,6 +1,7 @@
 package system
 
 import (
+	"encoding/json"
 	"log"
 	"time"
 )
@@ -11,12 +12,12 @@ func HashPassword(password string) string {
 }
 
 type User struct {
-	id        int64
+	id        int64     `json:"-"`
 	Name      string    `json:"name" binding:"required"`
 	Email     string    `json:"email" binding:"optional"`
 	CreatedAt time.Time `json:"created_at" binding:"optional"`
 	UpdatedAt string    `json:"updated_at" binding:"optional"`
-	password  string
+	password  string    `json:"-"`
 }
 
 func NewUser(name, email, password string) *User {
@@ -48,4 +49,8 @@ func (u *User) SetPassword(password string) {
 func (u *User) Password() string {
 	log.Println("warn! User.Password() called")
 	return u.password
+}
+
+func (u User) MarshalBinary() ([]byte, error) {
+	return json.Marshal(u)
 }

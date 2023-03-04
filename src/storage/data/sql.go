@@ -23,6 +23,7 @@ var (
 	logger             = log.New(log.Writer(), "data: ", log.Flags())
 	ErrTableNotEmpty   = errors.New("table is not empty")
 	ErrOpenInitFile    = errors.New("error opening init file")
+	ErrInitDB          = errors.New("error initializing database")
 	ErrReadFile        = errors.New("error reading init file")
 	ErrConnect         = errors.New("error connecting to database")
 	ErrConnectRedis    = errors.New("error connecting to redis")
@@ -82,7 +83,6 @@ func NewConnectorWithConf(ctx context.Context, config *DataConfig) (*DataBase, e
 	if err := config.init(); err != nil {
 		return nil, err
 	}
-	// fmt.Println(config.ConnString())
 	poolConfig, err := pgxpool.ParseConfig(config.ConnString())
 	if err != nil {
 		logger.Println(err)
@@ -110,6 +110,7 @@ func NewConnectorWithConf(ctx context.Context, config *DataConfig) (*DataBase, e
 			logger.Println(err)
 			return nil, ErrConnectRedis
 		}
+		logger.Println("connected to redis")
 		dbConn.cache = cache
 	} else {
 		dbConn.cache = cache.NewStubConnector()
@@ -135,10 +136,70 @@ func (db *DataBase) Init() error {
 		return ErrOpenInitFile
 	}
 	defer file.Close()
-	split := strings.Split(db.config.InitFile, ".")
-	suffix := split[len(split)-1]
+	info, err := file.Stat()
+	if err != nil {
+		logger.Println(err)
+		return ErrOpenInitFile
+	}
+	if info.IsDir() {
+		files, err := file.ReadDir(-1)
+		if err != nil {
+			logger.Println(err)
+			return ErrReadFile
+		}
+		for _, dirEntry := range files {
+			if dirEntry.IsDir() {
+				continue
+			}
+			fileEntry, err := os.Open(fmt.Sprint(info.Name(), string(os.PathSeparator), dirEntry.Name()))
+			if err != nil {
+				logger.Println(err)
+				return ErrReadFile
+			}
+			if err := loadInitFile(db, fileEntry); err != nil {
+				return err
+			}
+		}
+	} else {
+		if err := loadInitFile(db, file); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func loadInitFile(db *DataBase, file *os.File) error {
+	query, err := parseFile(file)
+	if err != nil {
+		logger.Println(err)
+		return ErrInitDB
+	}
+	if os.Getenv("ENVIRONMENT") == "DEVELOPMENT" {
+		logger.Println(strings.ReplaceAll(query, "\\ ", "\\\n"))
+
+	}
+	if _, err = db.pool.Exec(db.context, query); err != nil {
+		logger.Println(err)
+		return ErrInitDB
+	}
+	return nil
+}
+
+func readSQL(file *os.File) string {
 	var query string
-	var val string
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		query += scanner.Text()
+	}
+	return query
+}
+
+func parseFile(file *os.File) (string, error) {
+	split := strings.Split(file.Name(), ".")
+	suffix := split[len(split)-1]
+	var query, val string
+	var err error
 	switch suffix {
 	case "sql":
 		logger.Println("warning: initializing database with raw sql file")
@@ -155,33 +216,13 @@ func (db *DataBase) Init() error {
 		}
 	default:
 		logger.Println("error: invalid file type")
-		return ErrOpenInitFile
+		return "", ErrOpenInitFile
 	}
 	if err != nil {
 		logger.Println(err)
-		return ErrReadFile
+		return "", ErrOpenInitFile
 	}
-
-	if os.Getenv("ENVIRONMENT") == "DEVELOPMENT" {
-		logger.Println(strings.ReplaceAll(query, "\\ ", "\\\n"))
-
-	}
-
-	_, err = db.pool.Exec(db.context, query)
-	if err != nil {
-		logger.Println(err)
-		return ErrDBCreate
-	}
-	return nil
-}
-
-func readSQL(file *os.File) string {
-	var query string
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		query += scanner.Text()
-	}
-	return query
+	return query, nil
 }
 
 func read(file *os.File, parser func(data []byte, v any) error) (string, error) {
@@ -238,7 +279,7 @@ func (db *DataBase) Select(ctx context.Context, table string, fields []FieldName
 		logger.Println(err)
 		return nil, ErrDBSelect
 	}
-	fmt.Printf("got data: %+v\n", result)
+	// logger.Printf("got data: %+v\n", result)
 	return result, nil
 }
 
