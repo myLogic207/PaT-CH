@@ -176,12 +176,14 @@ func loadInitFile(db *DataBase, file *os.File) error {
 		return ErrInitDB
 	}
 	if os.Getenv("ENVIRONMENT") == "DEVELOPMENT" {
-		logger.Println(strings.ReplaceAll(query, "\\ ", "\\\n"))
+		logger.Println(strings.ReplaceAll(query, "\\", "\\\n"))
 
 	}
-	if _, err = db.pool.Exec(db.context, query); err != nil {
-		logger.Println(err)
-		return ErrInitDB
+	for _, q := range strings.Split(query, "\\") {
+		if _, err = db.pool.Exec(db.context, q); err != nil {
+			logger.Println(err)
+			return ErrInitDB
+		}
 	}
 	return nil
 }

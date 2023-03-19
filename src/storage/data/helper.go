@@ -64,13 +64,12 @@ type DBInit struct {
 
 func (i *DBInit) String() string {
 	sb := strings.Builder{}
-	sb.WriteString(fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s", i.Table[0].String()))
+	sb.WriteString(fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s;", i.Table[0].String()))
 	if len(i.Table) < 2 {
 		return sb.String()
 	}
 	for _, table := range i.Table[1:] {
-		sb.WriteString(table.String())
-		sb.WriteString("\\ ")
+		sb.WriteString(fmt.Sprintf("\\CREATE TABLE IF NOT EXISTS %s;", table.String()))
 	}
 	return sb.String()
 }
