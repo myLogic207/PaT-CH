@@ -139,16 +139,30 @@ func (s *SessionControl) Status(c *gin.Context) {
 }
 
 func (s *SessionControl) GetUser(c *gin.Context) {
-	session := sessions.Default(c)
-	if session.Get("id") == nil {
+	var user *system.User
+	if val, ok := c.Get("id"); !ok || val == "" {
 		c.JSON(http.StatusForbidden, gin.H{
 			"message": "disconnected",
 		})
 		c.Abort()
 		return
+	} else {
+		var err error
+		if user, err = s.db.GetByName(c, val.(string)); err != nil {
+			logger.Println(err)
+			c.JSON(http.StatusNotFound, gin.H{"user": "Error finding User"})
+			c.Abort()
+		}
+	}
+	var id string
+	if val, ok := c.Get("id"); ok {
+		id = val.(string)
+	} else {
+		id = ""
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"user": session.Get("username"),
+		"id":	  id,
+		"user": user,
 	})
 }
 
