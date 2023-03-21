@@ -27,6 +27,7 @@ var (
 	ErrStartServer       = errors.New("server starting")
 	ErrStopServer        = errors.New("could not stop server")
 	ErrInitServer        = errors.New("could not initialize server")
+	ErrOpenInitFile      = errors.New("could not open init file")
 )
 
 type keyServerAddr string
@@ -101,20 +102,20 @@ func (s *Server) Init() error {
 	file, err := os.Open(s.config.InitFile)
 	if err != nil {
 		logger.Println(err)
-		return ErrInitServer
+		return ErrOpenInitFile
 	}
 	defer file.Close()
 	// if folder, if file, if not exist, create
 	var info os.FileInfo
 	if info, err = file.Stat(); err != nil {
 		logger.Println("Init file is a directory")
-		return ErrInitServer
+		return ErrOpenInitFile
 	}
 	if info.IsDir() {
 		files, err := os.ReadDir(s.config.InitFile)
 		if err != nil {
 			logger.Println(err)
-			return ErrInitServer
+			return ErrOpenInitFile
 		}
 		for _, f := range files {
 			if f.IsDir() {

@@ -16,16 +16,16 @@ import (
 )
 
 const LOGO = `
-8 888888888o      .8.    8888888 8888888888 ,o888888o.    8 8888        8
-8 8888    '88.   .888.         8 8888      8888     '88.  8 8888        8
-8 8888     '88  :88888.        8 8888   ,8 8888       '8. 8 8888        8
-8 8888     ,88 . '88888.       8 8888   88 8888           8 8888        8
-8 8888.   ,88'.8. '88888.      8 8888   88 8888           8 8888        8
-8 888888888P'.8'8. '88888.     8 8888   88 8888           8 8888        8
-8 8888      .8' '8. '88888.    8 8888   88 8888           8 8888888888888
-8 8888     .8'   '8. '88888.   8 8888   '8 8888       .8' 8 8888        8
-8 8888    .888888888. '88888.  8 8888      8888     ,88'  8 8888        8
-8 8888   .8'       '8. '88888. 8 8888       '8888888P'    8 8888        8
+8888888888o      .8.    8888888 8888888888 ,o888888o.    8 8888        8
+88888    '88.   .888.         8 8888      8888     '88.  8 8888        8
+88888     '88  :88888.        8 8888   ,8 8888       '8. 8 8888        8
+88888     ,88 . '88888.       8 8888   88 8888           8 8888        8
+88888.   ,88'.8. '88888.      8 8888   88 8888           8 8888        8
+8888888888P'.8'8. '88888.     8 8888   88 8888           8 8888        8
+88888      .8' '8. '88888.    8 8888   88 8888           8 8888888888888
+88888     .8'   '8. '88888.   8 8888   '8 8888       .8' 8 8888        8
+88888    .888888888. '88888.  8 8888      8888     ,88'  8 8888        8
+88888   .8'       '8. '88888. 8 8888       '8888888P'    8 8888        8
 `
 
 func prepareData(config *system.Config) (*system.ConfigMap, *system.ConfigMap, error) {
@@ -79,6 +79,30 @@ func prepareApi(config *system.Config) (*system.ConfigMap, *system.ConfigMap, er
 	return apiConf, redisConf, nil
 }
 
+func setWorkDir(path string) error {
+	log.Println("setting working directory to ", path)
+	file, err := os.Open(path)
+	if err != nil {
+		log.Println("error while opening working directory:\n", err)
+		if strings.Contains(err.Error(), "The system cannot find the file specified.") {
+			if err := os.Mkdir(path, 0777); err != nil {
+				return err
+			}
+			time.Sleep(1 * time.Second)
+			if err := os.Chdir(path); err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
+	}
+	file.Close()
+	if err := os.Chdir(path); err != nil {
+		return err
+	}
+	return nil
+}
+
 func prepEnv() (string, error) {
 	log.Println("loading environment...")
 	if val, ok := os.LookupEnv("ENVIRONMENT"); ok {
@@ -93,10 +117,11 @@ func prepEnv() (string, error) {
 	log.Println("environment loaded")
 
 	if val, ok := os.LookupEnv(fmt.Sprintf("%s_DIR", prefix)); ok {
-		log.Println("setting working directory to ", val)
-		if err := os.Chdir(val); err != nil {
+		if err := setWorkDir(val); err != nil {
 			return "", err
 		}
+	} else {
+		return "", errors.New("working directory not set")
 	}
 
 	log.Print(LOGO)
@@ -133,11 +158,15 @@ func main() {
 	}
 
 	log.Println("Components initialized, starting...")
-	if err := database.Init(); err != nil {
+	if err := database.Init(); err == data.ErrOpenInitFile {
+		log.Println("Cannot open Init-file/file not found, skipping database initialization")
+	} else if err != nil {
 		log.Fatalln("error while initializing database: ", err)
 	}
 	server.Init()
-	if err := server.Start(); err != api.ErrStartServer {
+	if err := server.Start(); err == api.ErrOpenInitFile {
+		log.Println("Cannot open Init-file/file not found, skipping server initialization")
+	} else if err != api.ErrStartServer {
 		log.Fatalln("error while starting server: ", err)
 	}
 	defer server.Stop()
