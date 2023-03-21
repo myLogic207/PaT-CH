@@ -10,7 +10,7 @@ func inTimeSpan(start, end, check time.Time) bool {
 	start = start.Truncate(time.Microsecond)
 	end = end.Truncate(time.Microsecond)
 	// fmt.Printf("start:\t%v\ncheck:\t%v\nend:\t%v\n", start, check, end)
-	return check.Compare(start) <= 0 && check.Before(end)
+	return check.After(start) && check.Before(end)
 }
 
 func TestUserDB(t *testing.T) {

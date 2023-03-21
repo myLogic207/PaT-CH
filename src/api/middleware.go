@@ -40,13 +40,13 @@ func NewRouter(sessionCtl *SessionControl, cache sessions.Store) *gin.Engine {
 		MaxAge:   60 * 60 * 1, // 1 hour
 		SameSite: http.SameSiteLaxMode,
 	})
-	router.Use(gin.Recovery())
-	router.Use(sessions.Sessions("patch_session", cache))
-
 	if os.Getenv("ENVIROMENT") == "development" {
 		router.Use(gin.Logger())
 		router.GET("/ping", routePing)
 	}
+
+	router.Use(gin.Recovery())
+	router.Use(sessions.Sessions("patch_session", cache))
 
 	addApiRoutes(router.Group("/api"), sessionCtl)
 
@@ -153,20 +153,22 @@ func apiLogFormatter(params gin.LogFormatterParams) string {
 	if err != nil {
 		return fmt.Sprintf("LOG ERRROR - REPORT IMMEDIATELY\n-----\n%s\n-----\n", err.Error())
 	}
-	return string(out)
+	return string(out) + "\n"
 }
 
 func createLog(params gin.LogFormatterParams) *SessionLog {
 	outLog := &SessionLog{
-		TimeStamp:    params.TimeStamp.Format("02/Jan/2006:15:04:05 -0700"),
-		ClientIP:     params.ClientIP,
-		Method:       params.Method,
-		Path:         params.Path,
-		Proto:        params.Request.Proto,
-		StatusCode:   params.StatusCode,
-		Latency:      params.Latency,
-		UserAgent:    params.Request.UserAgent(),
-		ErrorMessage: params.ErrorMessage,
+		TimeStamp:  params.TimeStamp.Format("02/Jan/2006:15:04:05 -0700"),
+		ClientIP:   params.ClientIP,
+		Method:     params.Method,
+		Path:       params.Path,
+		Proto:      params.Request.Proto,
+		StatusCode: params.StatusCode,
+		Latency:    params.Latency,
+		UserAgent:  params.Request.UserAgent(),
+	}
+	if params.ErrorMessage != "" {
+		outLog.ErrorMessage = params.ErrorMessage
 	}
 	return outLog
 }
