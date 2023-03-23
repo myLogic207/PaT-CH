@@ -115,7 +115,7 @@ func (s *SessionControl) Connect(c *gin.Context) {
 	})
 }
 
-func (s *SessionControl) Disonnect(c *gin.Context) {
+func (s *SessionControl) Disconnect(c *gin.Context) {
 	session := sessions.Default(c)
 	session.Clear()
 	session.Save()
@@ -161,7 +161,7 @@ func (s *SessionControl) GetUser(c *gin.Context) {
 		id = ""
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"id":	  id,
+		"id":   id,
 		"user": user,
 	})
 }

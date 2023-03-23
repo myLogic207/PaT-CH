@@ -73,7 +73,7 @@ func addAuthRoutes(auth *gin.RouterGroup, sessionCtl *SessionControl) {
 	auth.Use(RoutePass)
 	addPatchRoutes(auth.Group("/patch"))
 	auth.POST("/connect", sessionCtl.Connect)
-	auth.POST("/disconnect", sessionCtl.Disonnect)
+	auth.POST("/disconnect", sessionCtl.Disconnect)
 	auth.GET("/session", GetID)
 }
 
