@@ -188,5 +188,7 @@ func main() {
 		time.Sleep(time.Duration(timeout) * time.Second)
 		mainStop()
 	}
-	// print("done")
+	for {
+		time.Sleep(time.Duration(1<<63 - 1))
+	}
 }
