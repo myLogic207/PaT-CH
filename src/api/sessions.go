@@ -13,8 +13,9 @@ import (
 const id_bytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890"
 
 var (
-	ErrRegister = fmt.Errorf("error registering user")
-	ErrConnect  = fmt.Errorf("error connecting user")
+	ErrRegister        = fmt.Errorf("error registering user")
+	ErrRegisterAlready = fmt.Errorf("user already exists")
+	ErrConnect         = fmt.Errorf("error connecting user")
 )
 
 type SessionControl struct {
@@ -69,7 +70,7 @@ func (s *SessionControl) register(c *gin.Context) {
 	user, err := s.db.Create(c, raw.Username, "", raw.Password)
 	if err != nil {
 		logger.Println(err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": ErrRegister})
+		c.JSON(http.StatusConflict, gin.H{"error": ErrRegisterAlready})
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{
@@ -140,7 +141,7 @@ func (s *SessionControl) Status(c *gin.Context) {
 
 func (s *SessionControl) GetUser(c *gin.Context) {
 	var user *system.User
-	if val, ok := c.Get("id"); !ok || val == "" {
+	if val, ok := c.Get("username"); !ok || val == "" {
 		c.JSON(http.StatusForbidden, gin.H{
 			"message": "disconnected",
 		})
@@ -152,6 +153,7 @@ func (s *SessionControl) GetUser(c *gin.Context) {
 			logger.Println(err)
 			c.JSON(http.StatusNotFound, gin.H{"user": "Error finding User"})
 			c.Abort()
+			return
 		}
 	}
 	var id string
