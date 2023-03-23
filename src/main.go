@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -103,7 +104,7 @@ func setWorkDir(path string) error {
 	return nil
 }
 
-func prepEnv() (string, error) {
+func prepEnv() (string, int, error) {
 	log.Println("loading environment...")
 	if val, ok := os.LookupEnv("ENVIRONMENT"); ok {
 		log.Println("starting server in ", val, " mode")
@@ -112,25 +113,35 @@ func prepEnv() (string, error) {
 	if val, ok := os.LookupEnv("PREFIX"); ok {
 		prefix = strings.ToUpper(val)
 	} else {
-		return "", errors.New("prefix not set")
+		return "", -1, errors.New("prefix not set")
 	}
 	log.Println("environment loaded")
 
 	if val, ok := os.LookupEnv(fmt.Sprintf("%s_DIR", prefix)); ok {
 		if err := setWorkDir(val); err != nil {
-			return "", err
+			return "", -1, err
 		}
 	} else {
-		return "", errors.New("working directory not set")
+		return "", -1, errors.New("working directory not set")
+	}
+
+	timeout := 0
+	val, ok := os.LookupEnv(fmt.Sprintf("%s_TIMEOUT", prefix))
+	if ok {
+		var err error
+		timeout, err = strconv.Atoi(val)
+		if err != nil {
+			return "", -1, err
+		}
 	}
 
 	log.Print(LOGO)
 
-	return prefix, nil
+	return prefix, timeout, nil
 }
 
 func main() {
-	prefix, err := prepEnv()
+	prefix, timeout, err := prepEnv()
 	if err != nil {
 		log.Fatalln("error while preparing environment: ", err)
 	}
@@ -172,7 +183,10 @@ func main() {
 	defer server.Stop()
 	log.Println("Server started")
 
-	time.Sleep(300 * time.Second)
+	if timeout > 0 {
+		// timeout in seconds
+		time.Sleep(time.Duration(timeout) * time.Second)
+		mainStop()
+	}
 	// print("done")
-	mainStop()
 }
