@@ -105,6 +105,7 @@ func routeHealth(c *gin.Context) {
 func RoutePass(c *gin.Context) {
 	session := sessions.Default(c)
 	if session.Get("id") == nil && (c.Request.URL.Path != apiConnectURL) {
+		logger.Println("Unauthorized access to " + c.Request.URL.Path + " from " + c.ClientIP() + " with user agent " + c.Request.UserAgent())
 		c.JSON(http.StatusForbidden, gin.H{
 			"message": "unauthorized",
 		})

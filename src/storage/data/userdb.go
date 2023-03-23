@@ -15,6 +15,7 @@ var (
 	ErrNoUser       = errors.New("no user found")
 	ErrPassMismatch = errors.New("username or password incorrect")
 	ErrUserExists   = errors.New("username or email already exists")
+	ErrCreateUser   = errors.New("error creating user")
 )
 
 type UserDB struct {
@@ -23,6 +24,8 @@ type UserDB struct {
 }
 
 func NewUserDB(p *DataBase, usertable string) *UserDB {
+	usertable = strings.ToLower(usertable)
+	usertable = strings.TrimSpace(usertable)
 	return &UserDB{p, usertable}
 }
 
@@ -47,13 +50,16 @@ func (udb *UserDB) Create(ctx context.Context, name string, email string, passwo
 	}
 	user, err := udb.GetByName(ctx, name)
 	if err != nil {
-		return nil, err
+		logger.Println(err)
+		return nil, ErrCreateUser
 	}
+	logger.Printf("Created user %s\n", name)
 	go udb.updateCache(ctx, user)
 	return user, nil
 }
 
 func (udb *UserDB) GetAll(ctx context.Context) ([]*system.User, error) {
+	logger.Println("Getting all users")
 	val, err := udb.p.Select(ctx, udb.usertable, []FieldName{"*"}, nil, "")
 	if err != nil {
 		return nil, err
@@ -86,6 +92,7 @@ func (udb *UserDB) GetByName(ctx context.Context, name string) (*system.User, er
 		Email:     val[0]["email"].(string),
 		CreatedAt: val[0]["created_at"].(time.Time),
 	}
+	logger.Println("Got user by name", name)
 	go udb.updateCache(ctx, user)
 	return user, nil
 }
@@ -200,6 +207,9 @@ func (udb *UserDB) GetFromCache(ctx context.Context, key interface{}) (*system.U
 	// 	return val.(*system.User), nil
 	// }
 	// return nil, ErrNoUser
+	if !udb.p.cache.Is_active() {
+		return nil, false
+	}
 	if val, ok := udb.p.cache.Get(ctx, fmt.Sprint("user_", key)); ok {
 		user := system.User{}
 		if s, ok := val.(string); ok {
@@ -214,12 +224,18 @@ func (udb *UserDB) GetFromCache(ctx context.Context, key interface{}) (*system.U
 }
 
 func (udb *UserDB) updateCache(ctx context.Context, user *system.User) {
+	if !udb.p.cache.Is_active() {
+		return
+	}
 	udb.p.cache.Set(ctx, fmt.Sprint("user_", user.Name), user)
 	udb.p.cache.Set(ctx, fmt.Sprint("user_", user.Email), user)
 	udb.p.cache.Set(ctx, fmt.Sprint("user_", user.ID()), user)
 }
 
 func (udb *UserDB) clearCache(ctx context.Context, user *system.User) {
+	if !udb.p.cache.Is_active() {
+		return
+	}
 	udb.p.cache.Delete(ctx, fmt.Sprint("user_", user.Name))
 	udb.p.cache.Delete(ctx, fmt.Sprint("user_", user.Email))
 	udb.p.cache.Delete(ctx, fmt.Sprint("user_", user.ID()))

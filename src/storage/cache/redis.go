@@ -97,3 +97,7 @@ func (c *RedisConnector) Delete(ctx context.Context, key string) bool {
 		return true
 	}
 }
+
+func (c *RedisConnector) Is_active() bool {
+	return c.active
+}
