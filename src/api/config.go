@@ -10,14 +10,12 @@ import (
 )
 
 type ApiConfig struct {
-	Host       string `json:"host"`
-	Port       uint16 `json:"http_port"`
-	SPort      uint16 `json:"https_port"` // only used if secure is true
-	PortOffset uint16 `json:"port_offset"`
-	InitFile   string `json:"init_file"`
-	CertFile   string `json:"cert_file"` // only used if secure is true
-	KeyFile    string `json:"key_file"`  // only used if secure is true
-	Redis      bool   `json:"redis"`
+	Host       string       `json:"host"`
+	Port       uint16       `json:"port"`
+	PortOffset uint16       `json:"port_offset"`
+	InitFile   string       `json:"init_file"`
+	cert       *Certificate `json:"-"`
+	Redis      bool         `json:"redis"`
 	RedisConf  *cache.RedisConfig
 }
 
@@ -25,12 +23,10 @@ func DefaultConfig() *ApiConfig {
 	return &ApiConfig{
 		Host:       "localhost",
 		Port:       80,
-		SPort:      443,
 		PortOffset: 0,
 		InitFile:   "",
-		CertFile:   "",
-		KeyFile:    "",
 		Redis:      false,
+		cert:       nil,
 	}
 }
 
@@ -40,15 +36,12 @@ func (c *ApiConfig) Addr() string {
 
 func (c *ApiConfig) init() error {
 	if c.Host == "" {
-		c.Host = "localhost"
-		logger.Println("could not determine host, using localhost")
+		c.Host = ""
+		logger.Println("could not determine host, using all")
 	}
 	if c.Port == 0 {
-		c.Port = 2080
+		c.Port = 80
 		logger.Println("could not determine port, using default")
-	}
-	if c.SPort == 0 {
-		logger.Println("could not determine https port, not using https")
 	}
 	if c.PortOffset == 0 {
 		logger.Println("could not determine port offset, using none")
@@ -65,6 +58,14 @@ func (c *ApiConfig) init() error {
 		}
 		if c.RedisConf.Password == "" {
 			return errors.New("redis password not specified")
+		}
+	}
+	if c.cert != nil {
+		if c.cert.Cert == "" {
+			return errors.New("certificate file not specified")
+		}
+		if c.cert.Key == "" {
+			return errors.New("key file not specified")
 		}
 	}
 	return nil
@@ -86,15 +87,6 @@ func ParseConf(toConf *system.ConfigMap, rc *system.ConfigMap) (*ApiConfig, erro
 		}
 	}
 
-	if val, ok := toConf.Get("httpsport"); ok {
-		if p, err := strconv.ParseUint(val, 10, 16); err != nil {
-			logger.Println("could not parse 'httpsport', not using")
-			config.SPort = 0
-		} else {
-			config.SPort = uint16(p)
-		}
-	}
-
 	if val, ok := toConf.Get("portoffset"); ok {
 		if p, err := strconv.ParseUint(val, 10, 16); err != nil {
 			logger.Println("could not parse 'portoffset', using none")
@@ -108,12 +100,19 @@ func ParseConf(toConf *system.ConfigMap, rc *system.ConfigMap) (*ApiConfig, erro
 		config.InitFile = val
 	}
 
-	if val, ok := toConf.Get("certfile"); ok {
-		config.CertFile = val
+	config.cert = &Certificate{}
+
+	if val, ok := toConf.Get("cert"); ok {
+		config.cert.Cert = val
 	}
 
-	if val, ok := toConf.Get("keyfile"); ok {
-		config.KeyFile = val
+	if val, ok := toConf.Get("key"); ok {
+		config.cert.Key = val
+	}
+
+	if config.cert.Key == "" && config.cert.Cert == "" {
+		logger.Println("no certificate provided, not using tls")
+		config.cert = nil
 	}
 
 	if val, ok := toConf.Get("redis"); ok && rc != nil {

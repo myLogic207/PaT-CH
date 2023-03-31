@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"log"
@@ -24,10 +26,11 @@ const (
 var (
 	logger               = log.New(log.Writer(), "api: ", log.Flags())
 	ErrConnectionRefused = errors.New("connection refused")
-	ErrStartServer       = errors.New("server starting")
+	ErrStartServer       = errors.New("could not start server")
 	ErrStopServer        = errors.New("could not stop server")
 	ErrInitServer        = errors.New("could not initialize server")
 	ErrOpenInitFile      = errors.New("could not open init file")
+	ErrReadCert          = errors.New("could not read certificate")
 )
 
 type keyServerAddr string
@@ -157,23 +160,24 @@ func loadInitFile(path string, sessionCtl *SessionControl) error {
 func (s *Server) Start() error {
 	logger.Println("Starting server")
 	s.running = true
-	go func() {
-		if err := s.server.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
-			logger.Fatalln(err)
+	if s.config.cert == nil {
+		go func() {
+			if err := s.server.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+				logger.Fatalln(err)
+			}
+		}()
+	} else {
+		if !s.config.cert.Validate() {
+			return ErrStartServer
 		}
-	}()
-	logger.Println("Serving http on " + s.Addr("/"))
-	// TODO: Add https support (as secondary server)
-	// if s.config.SPort == 0 || s.config.CertFile == "" || s.config.KeyFile == "" {
-	// 	return ErrStartServer
-	// }
-	// go func() {
-	// 	if err := s.server.ListenAndServeTLS(s.config.CertFile, s.config.KeyFile); !errors.Is(err, http.ErrServerClosed) {
-	// 		logger.Fatalln(err)
-	// 	}
-	// }()
-	// logger.Println("Serving https on " + fmt.Sprint(s.config.SPort))
-	return ErrStartServer
+		go func() {
+			if err := s.server.ListenAndServeTLS(s.config.cert.Cert, s.config.cert.Key); !errors.Is(err, http.ErrServerClosed) {
+				logger.Fatalln(err)
+			}
+		}()
+	}
+	logger.Println("Serving https on " + s.Addr("/"))
+	return nil
 }
 
 func (s *Server) Stop() error {
@@ -192,6 +196,9 @@ func (s *Server) Stop() error {
 
 func (s *Server) Addr(route string) string {
 	pre := "http://"
+	if s.config.cert != nil {
+		pre = "https://"
+	}
 	return pre + s.config.Addr() + route
 }
 
@@ -201,4 +208,27 @@ func (s *Server) SetRoute(method, path string, handler gin.HandlerFunc) {
 
 func (s *Server) GetContext() context.Context {
 	return s.ctx
+}
+
+type Certificate struct {
+	Cert string `json:"cert"`
+	Key  string `json:"key"`
+}
+
+func (c *Certificate) Validate() bool {
+	cert, err := tls.LoadX509KeyPair(c.Cert, c.Key)
+	if err != nil {
+		logger.Println(err)
+		return false
+	}
+	if cert.Leaf == nil {
+		logger.Println("Parsing certificate successful")
+		return true
+	}
+
+	if cert.Leaf.PublicKeyAlgorithm != x509.RSA {
+		logger.Println("Leaf certificate is not RSA")
+		return false
+	}
+	return false
 }

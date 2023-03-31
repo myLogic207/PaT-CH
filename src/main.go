@@ -177,8 +177,8 @@ func main() {
 	server.Init()
 	if err := server.Start(); err == api.ErrOpenInitFile {
 		log.Println("Cannot open Init-file/file not found, skipping server initialization")
-	} else if err != api.ErrStartServer {
-		log.Fatalln("error while starting server: ", err)
+	} else if err != nil {
+		log.Fatalln("error while starting server:", err)
 	}
 	defer server.Stop()
 	log.Println("Server started")
