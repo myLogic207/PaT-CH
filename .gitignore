@@ -31,3 +31,4 @@ go.work
 *.code-workspace
 
 out
+work
