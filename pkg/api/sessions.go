@@ -7,8 +7,9 @@ import (
 
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
-	"github.com/mylogic207/PaT-CH/system"
 )
+
+const id = "unique_user_identifier"
 
 const id_bytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890"
 
@@ -22,6 +23,12 @@ type SessionControl struct {
 	key_len  int
 	sessions map[string]sessions.Session
 	db       UserTable
+}
+
+type rawUser struct {
+	Username string `json:"username"`
+	// Email    string `json:"email"`
+	Password string `json:"password"`
 }
 
 func NewSessionControl(db UserTable) *SessionControl {
@@ -79,35 +86,27 @@ func (s *SessionControl) register(c *gin.Context) {
 	})
 }
 
-type rawUser struct {
-	Username string `json:"username"`
-	// Email    string `json:"email"`
-	Password string `json:"password"`
-}
-
 func (s *SessionControl) Connect(c *gin.Context) {
 	var raw rawUser
 	if err := c.BindJSON(&raw); err != nil {
 		logger.Println(err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": ErrConnect})
-		c.Abort()
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": ErrConnect})
 		return
 	}
 	user, err := s.db.Authenticate(c, raw.Username, raw.Password)
 	if err != nil {
 		logger.Println(err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": ErrConnect})
-		c.Abort()
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": ErrConnect})
 		return
 	}
 	session := sessions.Default(c)
 	session.Clear()
 	session.Set("username", user.Name)
-	session.Set("id", s.getNewId())
+	session.Set(id, s.getNewId())
+	session.Set("status", "authorized")
 	if err := session.Save(); err != nil {
 		logger.Println(err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": ErrConnect})
-		c.Abort()
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "Failed to save session"})
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{
@@ -127,85 +126,11 @@ func (s *SessionControl) Disconnect(c *gin.Context) {
 
 func (s *SessionControl) Status(c *gin.Context) {
 	session := sessions.Default(c)
-	if session.Get("id") == nil {
-		c.JSON(http.StatusForbidden, gin.H{
-			"message": "disconnected",
-		})
-		c.Abort()
+	if session.Get(id) == nil {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "disconnected"})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"message": "connected",
-	})
-}
-
-func (s *SessionControl) GetUser(c *gin.Context) {
-	var user *system.User
-	if val, ok := c.Get("username"); !ok || val == "" {
-		c.JSON(http.StatusForbidden, gin.H{
-			"message": "disconnected",
-		})
-		c.Abort()
-		return
-	} else {
-		var err error
-		if user, err = s.db.GetByName(c, val.(string)); err != nil {
-			logger.Println(err)
-			c.JSON(http.StatusNotFound, gin.H{"user": "Error finding User"})
-			c.Abort()
-			return
-		}
-	}
-	var id string
-	if val, ok := c.Get("id"); ok {
-		id = val.(string)
-	} else {
-		id = ""
-	}
-	c.JSON(http.StatusOK, gin.H{
-		"id":   id,
-		"user": user,
-	})
-}
-
-func (s *SessionControl) UpdateUser(c *gin.Context) {
-	session := sessions.Default(c)
-	if session.Get("id") == nil {
-		c.JSON(http.StatusForbidden, gin.H{
-			"message": "disconnected",
-		})
-		return
-	}
-	user := session.Get("user").(system.User)
-	updated, err := s.db.Update(c, &user)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{
-		"message": "updated",
-		"user":    updated,
-	})
-}
-
-func (s *SessionControl) DeleteUser(c *gin.Context) {
-	session := sessions.Default(c)
-	if session.Get("id") == nil {
-		c.JSON(http.StatusForbidden, gin.H{
-			"message": "disconnected",
-		})
-		return
-	}
-	var username string
-	if val, ok := session.Get("username").(string); ok {
-		username = val
-	}
-	if err := s.db.DeleteByName(c, username); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	session.Clear()
-	c.JSON(http.StatusOK, gin.H{
-		"message": "deleted",
 	})
 }

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/mylogic207/PaT-CH/system"
+	"github.com/myLogic207/PaT-CH/pkg/util"
 )
 
 type RedisConfig struct {
@@ -34,17 +34,9 @@ func (c RedisConfig) Addr() string {
 	return c.Host + ":" + fmt.Sprint(c.Port)
 }
 
-func ParseConf(config *system.ConfigMap) (*RedisConfig, error) {
+func ParseConf(config *util.ConfigMap) (*RedisConfig, error) {
 	var err error
-	outConf := &RedisConfig{
-		Host:       "localhost",
-		Port:       6379,
-		Password:   "",
-		DB:         1,
-		Idle:       10,
-		MaxActive:  100,
-		TimeoutSec: 60,
-	}
+	outConf := DefaultConfig()
 	if val, ok := config.Get("host"); ok {
 		outConf.Host = val
 	} else {

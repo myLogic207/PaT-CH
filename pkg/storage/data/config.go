@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/mylogic207/PaT-CH/storage/cache"
-	"github.com/mylogic207/PaT-CH/system"
+	"github.com/myLogic207/PaT-CH/pkg/storage/cache"
+	"github.com/myLogic207/PaT-CH/pkg/util"
 )
 
 type DataConfig struct {
@@ -76,7 +76,7 @@ func (c *DataConfig) ConnString() string {
 	return fmt.Sprintf("postgresql://%s:%s@%s:%d/%s?sslmode=%s", c.User, c.password, c.Host, c.Port, c.DBname, c.SSLmode)
 }
 
-func parseConfig(rawConf *system.ConfigMap, rc *system.ConfigMap) (*DataConfig, error) {
+func parseConfig(rawConf *util.ConfigMap, rc *util.ConfigMap) (*DataConfig, error) {
 	if rawConf == nil {
 		return nil, errors.New("config is nil")
 	}

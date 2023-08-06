@@ -3,7 +3,7 @@ package api
 import (
 	"context"
 
-	"github.com/mylogic207/PaT-CH/system"
+	"github.com/myLogic207/PaT-CH/internal/system"
 )
 
 type UserTable interface {

@@ -64,7 +64,7 @@ func TestServer(t *testing.T) {
 
 func TestSessionNonAuth(t *testing.T) {
 	t.Log("Testing Session Middleware")
-	resp, err := http.DefaultClient.Get(TESTSERVER.Addr("/api/v1/auth/session"))
+	resp, err := http.DefaultClient.Get(TESTSERVER.Addr("/api/v1/session"))
 	fmt.Print("\n")
 	if err != nil {
 		t.Error(err)
@@ -85,6 +85,7 @@ type SessionResponse struct {
 
 func TestSessionUser(t *testing.T) {
 	t.Log("Testing Session Middleware")
+	client := http.Client{}
 	user := rawUser{
 		Username: "test",
 		Password: "test123",
@@ -93,7 +94,11 @@ func TestSessionUser(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	resp, err := http.DefaultClient.Post(TESTSERVER.Addr("/api/v1/register"), "application/json", strings.NewReader(string(login)))
+	register_req, err := http.NewRequest("POST", TESTSERVER.Addr("/api/v1/register"), strings.NewReader(string(login)))
+	if err != nil {
+		t.Error(err)
+	}
+	resp, err := client.Do(register_req)
 	if err != nil {
 		t.Error(err)
 	}
@@ -118,18 +123,22 @@ func TestSessionUser(t *testing.T) {
 	}
 	t.Log("Register Successful")
 
-	resp, err = http.DefaultClient.Get(TESTSERVER.Addr("/api/v1/status"))
+	resp, err = client.Get(TESTSERVER.Addr("/api/v1/status"))
 	if err != nil {
 		t.Error(err)
 	}
 	fmt.Print("\n")
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusForbidden {
-		t.Errorf("Expected 403, got %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("Expected 401, got %d", resp.StatusCode)
 		t.FailNow()
 	}
 
-	resp, err = http.DefaultClient.Post(TESTSERVER.Addr("/api/v1/auth/connect"), "application/json", strings.NewReader(string(login)))
+	login_req, err := http.NewRequest("POST", TESTSERVER.Addr("/api/v1/connect"), strings.NewReader(string(login)))
+	if err != nil {
+		t.Error(err)
+	}
+	resp, err = client.Do(login_req)
 	if err != nil {
 		t.Error(err)
 	}
@@ -165,7 +174,7 @@ func TestSessionUser(t *testing.T) {
 	// 	t.FailNow()
 	// }
 
-	resp, err = http.DefaultClient.Get(TESTSERVER.Addr("/api/v1/auth/session"))
+	resp, err = client.Get(TESTSERVER.Addr("/api/v1/session"))
 	if err != nil {
 		t.Error(err)
 	}
@@ -192,7 +201,11 @@ func TestSessionUser(t *testing.T) {
 	}
 	t.Log("Status Successful")
 
-	resp, err = http.DefaultClient.Post(TESTSERVER.Addr("/api/v1/user/delete"), "application/json", nil)
+	delete_user, err := http.NewRequest("DELETE", TESTSERVER.Addr("/api/v1/user"), nil)
+	if err != nil {
+		t.Error(err)
+	}
+	resp, err = client.Do(delete_user)
 	if err != nil {
 		t.Error(err)
 	}

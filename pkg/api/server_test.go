@@ -12,7 +12,7 @@ func TestNewServer(t *testing.T) {
 	t.Log("Testing NewServer")
 	server, err := NewServerWithConf(context.Background(), NewUserIMDB(), &ApiConfig{
 		Host:  "localhost",
-		Port:  3080,
+		Port:  33080,
 		Redis: false,
 	})
 	if err != nil {
@@ -24,7 +24,7 @@ func TestNewServer(t *testing.T) {
 	}
 	t.Log("Starting server")
 
-	if err := server.Start(); !errors.Is(err, ErrStartServer) {
+	if err := server.Start(); err != nil && !errors.Is(err, ErrStartServer) {
 		t.Error(err)
 		t.FailNow()
 	}

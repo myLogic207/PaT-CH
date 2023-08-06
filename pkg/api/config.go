@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/mylogic207/PaT-CH/storage/cache"
-	"github.com/mylogic207/PaT-CH/system"
+	"github.com/myLogic207/PaT-CH/pkg/storage/cache"
+	"github.com/myLogic207/PaT-CH/pkg/util"
 )
 
 type ApiConfig struct {
@@ -71,7 +71,7 @@ func (c *ApiConfig) init() error {
 	return nil
 }
 
-func ParseConf(toConf *system.ConfigMap, rc *system.ConfigMap) (*ApiConfig, error) {
+func ParseConf(toConf *util.ConfigMap, rc *util.ConfigMap) (*ApiConfig, error) {
 	config := &ApiConfig{}
 
 	if val, ok := toConf.Get("host"); ok {

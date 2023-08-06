@@ -14,8 +14,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/mylogic207/PaT-CH/storage/cache"
-	"github.com/mylogic207/PaT-CH/system"
+	"github.com/myLogic207/PaT-CH/pkg/storage/cache"
+	"github.com/myLogic207/PaT-CH/pkg/util"
 	"gopkg.in/yaml.v3"
 )
 
@@ -71,7 +71,7 @@ type DataBase struct {
 	Users   *UserDB
 }
 
-func NewConnector(ctx context.Context, config *system.ConfigMap, rc *system.ConfigMap) (*DataBase, error) {
+func NewConnector(ctx context.Context, config *util.ConfigMap, rc *util.ConfigMap) (*DataBase, error) {
 	conf, err := parseConfig(config, rc)
 	if err != nil {
 		return nil, err
@@ -338,7 +338,7 @@ func (db *DataBase) transactionWrapper(ctx context.Context, dbFunction DBMethod,
 		logger.Println(err)
 		return nil, ErrBuildQuery
 	}
-	if os.Getenv("ENVIROMENT") == "development" {
+	if os.Getenv("ENVIRONMENT") == "development" {
 		logger.Printf("query: %s", query)
 	}
 	tx, err := db.pool.Begin(ctx)
