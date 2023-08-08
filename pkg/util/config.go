@@ -12,7 +12,6 @@ import (
 )
 
 var (
-	logger          = log.New(os.Stdout, "system: ", log.LstdFlags)
 	ErrNotSplitAble = errors.New("cannot split into minimum (2) parts")
 	ErrConfNotEmpty = errors.New("config field not empty")
 	ErrFieldNil     = errors.New("supplied field cannot be nil")
@@ -65,6 +64,7 @@ func (c *ConfigMap) Set(field string, val string) error {
 }
 
 type Config struct {
+	logger *log.Logger
 	sync.RWMutex
 	nested map[string]*ConfigMap
 	direct map[string]string
@@ -78,6 +78,15 @@ type ConfEntry struct {
 
 func NewConfig() *Config {
 	return &Config{
+		logger: log.New(os.Stdout, "[Config] ", log.LstdFlags),
+		nested: make(map[string]*ConfigMap),
+		direct: make(map[string]string),
+	}
+}
+
+func NewConfigWithLogger(logger *log.Logger) *Config {
+	return &Config{
+		logger: logger,
 		nested: make(map[string]*ConfigMap),
 		direct: make(map[string]string),
 	}
@@ -97,7 +106,7 @@ func (c *Config) Get(field string) (interface{}, bool) {
 
 func (c *Config) Set(field string, value interface{}) error {
 	if value == nil {
-		logger.Println("Config field cannot be nil: ", field)
+		c.logger.Println("Config field cannot be nil: ", field)
 		return ErrFieldNil
 	}
 	field = strings.ToLower(field)
@@ -135,15 +144,15 @@ func (c *Config) SetField(section string, field string, value string) error {
 	c.Lock()
 	defer c.Unlock()
 	if c.direct[section] != "" {
-		logger.Printf("Config field already set directly: %s", section)
+		c.logger.Printf("Config field already set directly: %s", section)
 		return ErrConfNotEmpty
 	}
 	if c.nested[section] == nil {
-		// logger.Printf("Creating new config map: %s", section)
+		// c.logger.Printf("Creating new config map: %s", section)
 		c.nested[section] = NewConfigMap()
 	}
 	if os.Getenv("ENVIRONMENT") == "development" {
-		logger.Printf("Setting config field: %s->%s = %s", section, field, value)
+		c.logger.Printf("Setting config field: %s->%s = %s", section, field, value)
 	}
 	return c.nested[section].Set(field, value)
 }
@@ -222,10 +231,14 @@ func setEntries(entryStream <-chan *ConfEntry, wg *sync.WaitGroup, config *Confi
 }
 
 func LoadConfig(prefix string) *Config {
-	logger.Println("Loading config from environment variables (prefix: " + prefix + ")")
+	return LoadConfigWithLogger(prefix, log.New(os.Stdout, "[Config] ", log.LstdFlags))
+}
+
+func LoadConfigWithLogger(prefix string, logger *log.Logger) *Config {
+	log.Println("Loading config from environment variables (prefix: " + prefix + ")")
 	waitGroup := &sync.WaitGroup{}
 	timeoutChannel := make(chan bool, 1)
-	config := NewConfig()
+	config := NewConfigWithLogger(logger)
 	go func() {
 		defer close(timeoutChannel)
 		variableStream := getVars(prefix, waitGroup)
@@ -233,34 +246,50 @@ func LoadConfig(prefix string) *Config {
 		setEntries(entries, waitGroup, config)
 		waitGroup.Wait()
 	}()
-	logger.Println("Waiting for config to load...")
+	log.Println("Waiting for config to load...")
 	select {
 	case <-timeoutChannel:
-		logger.Println("Config loaded")
+		log.Println("Config loaded")
 		return config
 	case <-time.After(10 * time.Second):
-		logger.Fatalln("Config load timeout - partial config supplied")
+		log.Fatalln("Config load timeout - partial config supplied")
 		return nil
 	}
+}
+
+func LoadConfigMaps(config *Config, configNames []string) (map[string]*ConfigMap, error) {
+	configList := make(map[string]*ConfigMap)
+	for _, configName := range configNames {
+		rawConfigMap, ok := config.Get(configName)
+		if !ok {
+			return nil, errors.New("Config not found: " + configName)
+		}
+		if configMap, ok := rawConfigMap.(*ConfigMap); ok {
+			configList[configName] = configMap
+		} else {
+			return nil, errors.New("Config not mappable: " + configName)
+		}
+	}
+	return configList, nil
 }
 
 func parseEnvVar(envVar string, prefixLen int) *ConfEntry {
 	rawKey, value, err := twoSplit(envVar, "=")
 	if err != nil {
-		logger.Println(err)
+		log.Println(err)
 		return nil
 	}
 	key := string(rawKey[(prefixLen + 1):])
 	key = strings.ToUpper(key)
 
 	if strings.HasSuffix(key, "_FILE") {
-		logger.Println("Loading config from file: " + value)
+		log.Println("Loading config from file: " + value)
 		if file, err := os.Open(value); err == nil {
 			defer file.Close()
 			value = readEnvFromFile(file)
 			key = key[:len(key)-5]
 		} else {
-			logger.Println(err)
+			log.Println(err)
 			return nil
 		}
 	}
@@ -268,8 +297,7 @@ func parseEnvVar(envVar string, prefixLen int) *ConfEntry {
 	if strings.Contains(key, "_") {
 		parent, field, err := twoSplit(key, "_")
 		if err != nil {
-
-			logger.Println(err)
+			log.Println(err)
 		}
 		return &ConfEntry{
 			parent: string(parent),
