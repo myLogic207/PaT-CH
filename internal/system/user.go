@@ -2,7 +2,6 @@ package system
 
 import (
 	"encoding/json"
-	"log"
 	"time"
 )
 
@@ -16,17 +15,33 @@ type User struct {
 	Name      string    `json:"name" binding:"required"`
 	Email     string    `json:"email" binding:"optional"`
 	CreatedAt time.Time `json:"created_at" binding:"optional"`
-	UpdatedAt string    `json:"updated_at" binding:"optional"`
-	password  string    `json:"-"`
+	UpdatedAt time.Time `json:"updated_at" binding:"optional"`
 }
 
-func NewUser(name, email, password string) *User {
+func NewUser(name string, email string) *User {
 	return &User{
 		Name:      name,
 		Email:     email,
 		CreatedAt: time.Now().UTC(),
-		password:  HashPassword(password),
 	}
+}
+
+func LoadUser(id int64, name string, email string, created *time.Time, updated *time.Time) *User {
+	user := &User{
+		id:    id,
+		Name:  name,
+		Email: email,
+	}
+
+	if created != nil {
+		user.CreatedAt = *created
+	}
+
+	if updated != nil {
+		user.UpdatedAt = *updated
+	}
+
+	return user
 }
 
 func (u *User) ID() int64 {
@@ -35,20 +50,6 @@ func (u *User) ID() int64 {
 
 func (u *User) SetID(id int64) {
 	u.id = id
-}
-
-func (u *User) CheckPassword(password string) bool {
-	return HashPassword(password) == u.password
-}
-
-func (u *User) SetPassword(password string) {
-	log.Println("warn! User.SetPassword() called")
-	u.password = HashPassword(password)
-}
-
-func (u *User) Password() string {
-	log.Println("warn! User.Password() called")
-	return u.password
 }
 
 func (u User) MarshalBinary() ([]byte, error) {

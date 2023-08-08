@@ -76,65 +76,71 @@ func (udb *UserDB) GetAll(ctx context.Context) ([]*system.User, error) {
 	return users, nil
 }
 
+var USER_FIELDS = []FieldName{"id", "name", "email", "created_at", "updated_at"}
+
 func (udb *UserDB) GetByName(ctx context.Context, name string) (*system.User, error) {
 	if val, ok := udb.GetFromCache(ctx, name); ok {
 		return val, nil
 	}
-	val, err := udb.p.Select(ctx, udb.usertable, []FieldName{"*"}, NewWhereMap(map[FieldName]interface{}{"name": name}), "LIMIT 1")
-	if err != nil {
-		return nil, err
-	}
-	if len(val) == 0 {
-		return nil, ErrNoUser
-	}
-	user := &system.User{
-		Name:      val[0]["name"].(string),
-		Email:     val[0]["email"].(string),
-		CreatedAt: val[0]["created_at"].(time.Time),
-	}
-	logger.Println("Got user by name", name)
-	go udb.updateCache(ctx, user)
-	return user, nil
+	whereClause := NewWhereMap(map[FieldName]interface{}{"name": name})
+	return udb.getUserWithWhere(ctx, whereClause)
 }
 
 func (udb *UserDB) GetByEmail(ctx context.Context, email string) (*system.User, error) {
 	if val, ok := udb.GetFromCache(ctx, email); ok {
 		return val, nil
 	}
-	val, err := udb.p.Select(ctx, udb.usertable, []FieldName{"*"}, NewWhereMap(map[FieldName]interface{}{"email": email}), "LIMIT 1")
-	if err != nil {
-		return nil, err
-	}
-	if len(val) == 0 {
-		return nil, ErrNoUser
-	}
-	user := &system.User{
-		Name:      val[0]["name"].(string),
-		Email:     val[0]["email"].(string),
-		CreatedAt: val[0]["created_at"].(time.Time),
-	}
-	go udb.updateCache(ctx, user)
-	return user, nil
+	whereClause := NewWhereMap(map[FieldName]interface{}{"email": email})
+	return udb.getUserWithWhere(ctx, whereClause)
 }
 
 func (udb *UserDB) GetById(ctx context.Context, id int64) (*system.User, error) {
 	if val, ok := udb.GetFromCache(ctx, id); ok {
 		return val, nil
 	}
-	val, err := udb.p.Select(ctx, udb.usertable, []FieldName{"*"}, NewWhereMap(map[FieldName]interface{}{"id": id}), "LIMIT 1")
+	whereClause := NewWhereMap(map[FieldName]interface{}{"id": id})
+	return udb.getUserWithWhere(ctx, whereClause)
+}
+
+func (udb *UserDB) getUserWithWhere(ctx context.Context, whereMap *WhereMap) (*system.User, error) {
+	raw_db_user, err := udb.p.Select(ctx, udb.usertable, USER_FIELDS, whereMap, "LIMIT 1")
 	if err != nil {
 		return nil, err
 	}
-	if len(val) == 0 {
+	if len(raw_db_user) == 0 {
 		return nil, ErrNoUser
 	}
-	user := &system.User{
-		Name:      val[0]["name"].(string),
-		Email:     val[0]["email"].(string),
-		CreatedAt: val[0]["created_at"].(time.Time),
+	var created, updated time.Time
+	if val, ok := raw_db_user[0]["created_at"].(time.Time); ok {
+		created = val
 	}
+	if val, ok := raw_db_user[0]["updated_at"].(time.Time); ok {
+		updated = val
+	}
+	user := system.LoadUser(raw_db_user[0]["id"].(int64), raw_db_user[0]["name"].(string), raw_db_user[0]["email"].(string), &created, &updated)
+	logger.Println("Got user", user.Name)
 	go udb.updateCache(ctx, user)
 	return user, nil
+}
+
+var USER_PASSWORD_FIELDS = []FieldName{"password"} // salt, etc.
+
+func (udb *UserDB) verifyPasswordById(ctx context.Context, id int64, password string) bool {
+	val, err := udb.p.Select(ctx, udb.usertable, USER_PASSWORD_FIELDS, NewWhereMap(map[FieldName]interface{}{"id": id}), "LIMIT 1")
+	if err != nil {
+		return false
+	}
+	if len(val) == 0 {
+		return false
+	}
+	user_password_hash := val[0]["password"].(string)
+	if user_password_hash == "" {
+		return false
+	}
+	if system.HashPassword(password) == user_password_hash {
+		return true
+	}
+	return false
 }
 
 func (udb *UserDB) Update(ctx context.Context, user *system.User) (*system.User, error) {
@@ -143,8 +149,21 @@ func (udb *UserDB) Update(ctx context.Context, user *system.User) (*system.User,
 	usermap := map[FieldName]DBValue{
 		"name":       user.Name,
 		"email":      user.Email,
-		"password":   user.Password(),
 		"updated_at": timestamp,
+	}
+	if err := udb.p.Update(ctx, udb.usertable, usermap, NewWhereMap(map[FieldName]interface{}{"id": user.ID()})); err != nil {
+		return nil, err
+	}
+	go udb.updateCache(ctx, user)
+	return user, nil
+}
+
+func (udb *UserDB) UpdateUserPassword(ctx context.Context, user *system.User, new_password string) (*system.User, error) {
+	timestamp := fmt.Sprint(time.Now().UTC())
+	timestamp = timestamp[:len(timestamp)-9]
+	usermap := map[FieldName]DBValue{
+		"updated_at": timestamp,
+		"password":   system.HashPassword(new_password),
 	}
 	if err := udb.p.Update(ctx, udb.usertable, usermap, NewWhereMap(map[FieldName]interface{}{"id": user.ID()})); err != nil {
 		return nil, err
@@ -185,7 +204,7 @@ func (udb *UserDB) AuthenticateByName(ctx context.Context, name string, password
 	if err != nil {
 		return nil, err
 	}
-	if user.CheckPassword(password) {
+	if !udb.verifyPasswordById(ctx, user.ID(), password) {
 		return nil, ErrPassMismatch
 	}
 	return user, nil
@@ -196,7 +215,7 @@ func (udb *UserDB) AuthenticateByEmail(ctx context.Context, email string, passwo
 	if err != nil {
 		return nil, err
 	}
-	if user.CheckPassword(password) {
+	if !udb.verifyPasswordById(ctx, user.ID(), password) {
 		return nil, ErrPassMismatch
 	}
 	return user, nil

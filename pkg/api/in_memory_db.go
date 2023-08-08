@@ -17,39 +17,49 @@ type UserTable interface {
 
 type UserIMDB struct {
 	UserTable
-	Users     map[string]*system.User
-	UsersID   map[int64]string
-	idcounter int64
+	Users       map[int64]*system.User
+	IDPasswords map[int64]string
+	idcounter   int64
 }
 
 func NewUserIMDB() *UserIMDB {
 	return &UserIMDB{
-		Users:   make(map[string]*system.User),
-		UsersID: make(map[int64]string),
+		Users:       make(map[int64]*system.User),
+		IDPasswords: make(map[int64]string),
 	}
 }
 
 func (u *UserIMDB) Authenticate(ctx context.Context, name string, password string) (*system.User, error) {
-	user := u.Users[name]
-	if user == nil {
-		return nil, nil
+	user, err := u.GetByName(ctx, name)
+	if err != nil {
+		return nil, err
 	}
-	if !user.CheckPassword(password) {
-		return nil, nil
+	if system.HashPassword(password) == u.IDPasswords[user.ID()] {
+		return user, nil
 	}
 	return user, nil
 }
 
 func (u *UserIMDB) GetByName(ctx context.Context, name string) (*system.User, error) {
-	return u.Users[name], nil
+	for _, user := range u.Users {
+		if user.Name == name {
+			return user, nil
+		}
+	}
+
+	return nil, nil
 }
 
 func (u *UserIMDB) GetByEmail(ctx context.Context, email string) (*system.User, error) {
+	// panic("not implemented")
 	return nil, nil
 }
 
 func (u *UserIMDB) GetById(ctx context.Context, id int64) (*system.User, error) {
-	return u.Users[u.UsersID[id]], nil
+	if u.Users[id] == nil {
+		return nil, nil
+	}
+	return u.Users[id], nil
 }
 
 func (u *UserIMDB) GetUsers(ctx context.Context) ([]*system.User, error) {
@@ -61,30 +71,33 @@ func (u *UserIMDB) GetUsers(ctx context.Context) ([]*system.User, error) {
 }
 
 func (u *UserIMDB) Create(ctx context.Context, name string, email string, password string) (*system.User, error) {
-	user := system.NewUser(name, email, password)
-	user.SetID(u.nextId())
-	u.Users[name] = user
-	u.UsersID[user.ID()] = name
+	user := system.NewUser(name, email)
+	id := u.nextId()
+	user.SetID(id)
+	u.Users[id] = user
+	u.IDPasswords[id] = system.HashPassword(password)
 	return user, nil
 }
 
 func (u *UserIMDB) Update(ctx context.Context, user *system.User) (*system.User, error) {
-	u.Users[user.Name] = user
-	u.UsersID[user.ID()] = user.Name
+	u.Users[user.ID()] = user
 	return user, nil
 }
 
 func (u *UserIMDB) DeleteById(ctx context.Context, id int64) error {
-	name := u.UsersID[id]
-	delete(u.Users, name)
-	delete(u.UsersID, id)
+	delete(u.Users, id)
+	delete(u.IDPasswords, id)
 	return nil
 }
 
 func (u *UserIMDB) DeleteByName(ctx context.Context, name string) error {
-	id := u.Users[name].ID()
-	delete(u.Users, name)
-	delete(u.UsersID, id)
+	for id, user := range u.Users {
+		if user.Name == name {
+			delete(u.Users, id)
+			delete(u.IDPasswords, id)
+			return nil
+		}
+	}
 	return nil
 }
 
