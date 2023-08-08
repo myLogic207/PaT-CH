@@ -123,14 +123,3 @@ func (s *SessionControl) Disconnect(c *gin.Context) {
 		"message": "disconnected",
 	})
 }
-
-func (s *SessionControl) Status(c *gin.Context) {
-	session := sessions.Default(c)
-	if session.Get(id) == nil {
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "disconnected"})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{
-		"message": "connected",
-	})
-}

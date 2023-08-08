@@ -1,7 +1,10 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
+	"os"
+	"strings"
 
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
@@ -10,19 +13,13 @@ import (
 
 func (s *SessionControl) UserRoutePass(c *gin.Context) {
 	session := sessions.Default(c)
-	if session.Get("status") == "unauthorized" {
-		logger.Println("Unauthorized access to " + c.Request.URL.Path + " from " + c.ClientIP() + " with user agent " + c.Request.UserAgent())
-		c.JSON(http.StatusForbidden, gin.H{
-			"message": "unauthorized",
-		})
-		c.Abort()
-		return
-	} else if session.Get("status") == "authorized" {
+	if session.Get("status") == "authorized" {
 		c.Set("id", session.Get("id"))
 		c.Set("username", session.Get("username"))
 		c.Next() // continue
 	} else {
-		c.JSON(http.StatusForbidden, gin.H{
+		logger.Println("Unauthorized access to " + c.Request.URL.Path + " from " + c.ClientIP() + " with user agent " + c.Request.UserAgent())
+		c.JSON(http.StatusUnauthorized, gin.H{
 			"message": "unauthorized",
 		})
 		c.Abort()
@@ -79,5 +76,35 @@ func (s *SessionControl) DeleteUser(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"message": "deleted",
+	})
+}
+
+func (s *SessionControl) Status(c *gin.Context) {
+	session := sessions.Default(c)
+	if session.Get(id) == nil {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "disconnected"})
+		return
+	}
+
+	if strings.ToLower(os.Getenv("ENVIRONMENT")) == "development" {
+		fmt.Println("user session id requested: ", session.Get(id))
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "connected",
+		"id":      session.Get(id),
+	})
+}
+
+func (s *SessionControl) GetSession(c *gin.Context) {
+	session := sessions.Default(c)
+	if session.Get(id) == nil {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "disconnected"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"message": "connected",
+		"id":      session.Get(id),
+		"user":    session.Get("username"),
 	})
 }

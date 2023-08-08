@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/gin-contrib/sessions"
-	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-gonic/gin"
 )
 
@@ -28,7 +27,6 @@ var apiSkipPaths = []string{"/api/v1/health"}
 
 func NewRouter(sessionCtl *SessionControl, cache sessions.Store) *gin.Engine {
 	router := gin.New()
-	cache2 := cookie.NewStore([]byte("secret"))
 	router.Use(gin.LoggerWithConfig(gin.LoggerConfig{
 		Formatter: apiLogFormatter,
 		Output:    logger.Writer(),
@@ -45,7 +43,7 @@ func NewRouter(sessionCtl *SessionControl, cache sessions.Store) *gin.Engine {
 	}
 
 	router.Use(gin.Recovery())
-	router.Use(sessions.Sessions("mysession", cache2))
+	router.Use(sessions.Sessions("patch_session", cache))
 
 	addApiRoutes(router.Group("/api"), sessionCtl)
 
@@ -61,11 +59,9 @@ func addApiRoutes(api *gin.RouterGroup, sessionCtl *SessionControl) {
 func addV1Routes(v1 *gin.RouterGroup, sessionCtl *SessionControl) {
 	v1.GET("/health", routeHealth)
 	v1.POST("/register", sessionCtl.register)
-	v1.GET("/status", sessionCtl.Status)
 	v1.GET("/forward/:dest", ForwardRequest)
 	v1.POST("/connect", sessionCtl.Connect)
 	v1.POST("/disconnect", sessionCtl.Disconnect)
-	v1.GET("/session", GetID)
 	addPatchRoutes(v1.Group("/patch"))
 	addUserRoutes(v1.Group("/user"), sessionCtl)
 }
@@ -76,6 +72,8 @@ func addUserRoutes(user *gin.RouterGroup, sessionCtl *SessionControl) {
 	user.GET("/", sessionCtl.GetUser)
 	// user.POST("/", UpdateUser)
 	user.DELETE("/", sessionCtl.DeleteUser)
+	user.GET("/status", sessionCtl.Status)
+	user.GET("/session", sessionCtl.GetSession)
 }
 
 // routes
@@ -93,25 +91,12 @@ func routeHealth(c *gin.Context) {
 	c.Status(http.StatusOK)
 }
 
-// GetID returns the id of the current user.
-func GetID(c *gin.Context) {
-	if id, ok := c.Get("id"); !ok {
-		c.JSON(http.StatusForbidden, gin.H{
-			"message": "disconnected",
-		})
-	} else {
-		c.JSON(http.StatusOK, gin.H{
-			"id": id.(string),
-		})
-	}
-}
-
 // Middleware
 func apiLogFormatter(params gin.LogFormatterParams) string {
 	outLog := createLog(params)
 	out, err := json.Marshal(outLog)
 	if err != nil {
-		return fmt.Sprintf("LOG ERRROR - REPORT IMMEDIATELY\n-----\n%s\n-----\n", err.Error())
+		return fmt.Sprintf("LOG ERROR - REPORT IMMEDIATELY\n-----\n%s\n-----\n", err.Error())
 	}
 	return string(out) + "\n"
 }
