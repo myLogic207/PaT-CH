@@ -37,17 +37,9 @@ func (c *ApiConfig) Addr() string {
 func (c *ApiConfig) init() error {
 	if c.Host == "" {
 		c.Host = ""
-		logger.Println("could not determine host, using all")
 	}
 	if c.Port == 0 {
 		c.Port = 80
-		logger.Println("could not determine port, using default")
-	}
-	if c.PortOffset == 0 {
-		logger.Println("could not determine port offset, using none")
-	}
-	if c.InitFile == "" {
-		logger.Println("could not determine init file, using none")
 	}
 	if c.Redis {
 		if c.RedisConf.Host == "" {
@@ -80,8 +72,7 @@ func ParseConf(toConf *util.ConfigMap, rc *util.ConfigMap) (*ApiConfig, error) {
 
 	if val, ok := toConf.Get("port"); ok {
 		if p, err := strconv.ParseUint(val, 10, 16); err != nil {
-			logger.Println("could not parse 'port', using default")
-			config.Port = 80
+			return nil, err
 		} else {
 			config.Port = uint16(p)
 		}
@@ -89,8 +80,7 @@ func ParseConf(toConf *util.ConfigMap, rc *util.ConfigMap) (*ApiConfig, error) {
 
 	if val, ok := toConf.Get("portoffset"); ok {
 		if p, err := strconv.ParseUint(val, 10, 16); err != nil {
-			logger.Println("could not parse 'portoffset', using none")
-			config.PortOffset = 0
+			return nil, err
 		} else {
 			config.PortOffset = uint16(p)
 		}
@@ -110,26 +100,18 @@ func ParseConf(toConf *util.ConfigMap, rc *util.ConfigMap) (*ApiConfig, error) {
 		config.cert.Key = val
 	}
 
-	if config.cert.Key == "" && config.cert.Cert == "" {
-		logger.Println("no certificate provided, not using tls")
-		config.cert = nil
-	}
-
 	if val, ok := toConf.Get("redis"); ok && rc != nil {
 		use, err := strconv.ParseBool(val)
-		if err != nil {
-			logger.Println("could not parse 'redis', not using")
-		} else {
+		if err == nil {
 			config.Redis = use
 			config.RedisConf, err = cache.ParseConf(rc)
 			if err != nil {
-				logger.Println("could not parse redis config, not using")
+				return nil, err
 			}
 		}
-	} else if ok {
-		logger.Println("redis config not provided, not using")
+	} else if ok && rc == nil {
+		return nil, errors.New("redis config not provided, not using")
 	}
 
-	logger.Println("Api finished parsing config")
 	return config, nil
 }

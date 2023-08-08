@@ -76,15 +76,10 @@ type ConfEntry struct {
 	value  string
 }
 
-func NewConfig() *Config {
-	return &Config{
-		logger: log.New(os.Stdout, "[Config] ", log.LstdFlags),
-		nested: make(map[string]*ConfigMap),
-		direct: make(map[string]string),
+func NewConfig(logger *log.Logger) *Config {
+	if logger == nil {
+		logger = log.Default()
 	}
-}
-
-func NewConfigWithLogger(logger *log.Logger) *Config {
 	return &Config{
 		logger: logger,
 		nested: make(map[string]*ConfigMap),
@@ -214,7 +209,11 @@ func parseStream(variableStream <-chan string, wg *sync.WaitGroup, prefixLen int
 		defer wg.Done()
 		defer close(entries)
 		for envVar := range variableStream {
-			entries <- parseEnvVar(envVar, prefixLen)
+			if val, err := parseEnvVar(envVar, prefixLen); err == nil {
+				entries <- val
+			} else {
+				panic(err)
+			}
 		}
 	}()
 	return entries
@@ -235,10 +234,10 @@ func LoadConfig(prefix string) *Config {
 }
 
 func LoadConfigWithLogger(prefix string, logger *log.Logger) *Config {
-	log.Println("Loading config from environment variables (prefix: " + prefix + ")")
+	logger.Println("Loading config from environment variables (prefix: " + prefix + ")")
 	waitGroup := &sync.WaitGroup{}
 	timeoutChannel := make(chan bool, 1)
-	config := NewConfigWithLogger(logger)
+	config := NewConfig(logger)
 	go func() {
 		defer close(timeoutChannel)
 		variableStream := getVars(prefix, waitGroup)
@@ -246,13 +245,13 @@ func LoadConfigWithLogger(prefix string, logger *log.Logger) *Config {
 		setEntries(entries, waitGroup, config)
 		waitGroup.Wait()
 	}()
-	log.Println("Waiting for config to load...")
+	logger.Println("Waiting for config to load...")
 	select {
 	case <-timeoutChannel:
-		log.Println("Config loaded")
+		logger.Println("Config loaded")
 		return config
 	case <-time.After(10 * time.Second):
-		log.Fatalln("Config load timeout - partial config supplied")
+		logger.Fatalln("Config load timeout - partial config supplied")
 		return nil
 	}
 }
@@ -273,11 +272,10 @@ func LoadConfigMaps(config *Config, configNames []string) (map[string]*ConfigMap
 	return configList, nil
 }
 
-func parseEnvVar(envVar string, prefixLen int) *ConfEntry {
+func parseEnvVar(envVar string, prefixLen int) (*ConfEntry, error) {
 	rawKey, value, err := twoSplit(envVar, "=")
 	if err != nil {
-		log.Println(err)
-		return nil
+		return nil, err
 	}
 	key := string(rawKey[(prefixLen + 1):])
 	key = strings.ToUpper(key)
@@ -289,8 +287,7 @@ func parseEnvVar(envVar string, prefixLen int) *ConfEntry {
 			value = readEnvFromFile(file)
 			key = key[:len(key)-5]
 		} else {
-			log.Println(err)
-			return nil
+			return nil, err
 		}
 	}
 
@@ -303,12 +300,12 @@ func parseEnvVar(envVar string, prefixLen int) *ConfEntry {
 			parent: string(parent),
 			field:  string(field),
 			value:  value,
-		}
+		}, nil
 	}
 	return &ConfEntry{
 		parent: key,
 		value:  value,
-	}
+	}, nil
 }
 
 func readEnvFromFile(file *os.File) string {

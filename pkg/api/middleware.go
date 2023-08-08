@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"time"
@@ -25,7 +26,7 @@ type SessionLog struct {
 
 var apiSkipPaths = []string{"/api/v1/health"}
 
-func NewRouter(sessionCtl *SessionControl, cache sessions.Store) *gin.Engine {
+func NewRouter(sessionCtl *SessionControl, logger *log.Logger, cache sessions.Store) *gin.Engine {
 	router := gin.New()
 	router.Use(gin.LoggerWithConfig(gin.LoggerConfig{
 		Formatter: apiLogFormatter,

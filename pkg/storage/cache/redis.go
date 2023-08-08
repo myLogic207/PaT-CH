@@ -10,29 +10,35 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-var logger = log.New(log.Writer(), "cache: ", log.Flags())
-
 type RedisConnector struct {
 	active bool
 	store  *redis.Client
+	logger *log.Logger
 }
 
 func NewStubConnector() *RedisConnector {
 	return &RedisConnector{
 		store:  nil,
 		active: false,
+		logger: nil,
 	}
 }
 
-func NewConnector(config *util.ConfigMap) (*RedisConnector, error) {
+func NewConnector(config *util.ConfigMap, logger *log.Logger) (*RedisConnector, error) {
+	if logger == nil {
+		logger = log.Default()
+	}
 	redisConfig, err := ParseConf(config)
 	if err != nil {
 		logger.Println("could not parse redis config, using default(s)")
 	}
-	return NewConnectorWithConf(redisConfig)
+	return NewConnectorWithConf(redisConfig, logger)
 }
 
-func NewConnectorWithConf(config *RedisConfig) (*RedisConnector, error) {
+func NewConnectorWithConf(config *RedisConfig, logger *log.Logger) (*RedisConnector, error) {
+	if logger == nil {
+		logger = log.Default()
+	}
 	connection := redis.NewClient(&redis.Options{
 		Addr:     config.Addr(),
 		Password: config.Password,
@@ -58,11 +64,11 @@ func (c *RedisConnector) Close() error {
 func (c *RedisConnector) Get(ctx context.Context, key string) (interface{}, bool) {
 	// if Redis get from Redis
 	if !c.active {
-		logger.Println(errors.New("redis not active"))
+		c.logger.Println(errors.New("redis not active"))
 		return "", false
 	}
 	if val, err := c.store.Get(ctx, key).Result(); err != nil {
-		logger.Println(err)
+		c.logger.Println(err)
 		return "", false
 	} else {
 		fmt.Println(val)
@@ -72,11 +78,11 @@ func (c *RedisConnector) Get(ctx context.Context, key string) (interface{}, bool
 
 func (c *RedisConnector) Set(ctx context.Context, key string, value interface{}) bool {
 	if !c.active {
-		logger.Println(errors.New("redis not active"))
+		c.logger.Println(errors.New("redis not active"))
 		return false
 	}
 	if val, err := c.store.Set(ctx, key, value, 0).Result(); err != nil {
-		logger.Println(err)
+		c.logger.Println(err)
 		return false
 	} else {
 		fmt.Println(val)
@@ -86,11 +92,11 @@ func (c *RedisConnector) Set(ctx context.Context, key string, value interface{})
 
 func (c *RedisConnector) Delete(ctx context.Context, key string) bool {
 	if !c.active {
-		logger.Println(errors.New("redis not active"))
+		c.logger.Println(errors.New("redis not active"))
 		return false
 	}
 	if val, err := c.store.Del(ctx, key).Result(); err != nil {
-		logger.Println(err)
+		c.logger.Println(err)
 		return false
 	} else {
 		fmt.Println(val)

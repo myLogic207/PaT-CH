@@ -20,7 +20,6 @@ import (
 )
 
 var (
-	logger             = log.New(log.Writer(), "data: ", log.Flags())
 	ErrTableNotEmpty   = errors.New("table is not empty")
 	ErrOpenInitFile    = errors.New("error opening init file")
 	ErrInitDB          = errors.New("error initializing database")
@@ -69,17 +68,24 @@ type DataBase struct {
 	config  *DataConfig
 	cache   *cache.RedisConnector
 	Users   *UserDB
+	logger  *log.Logger
 }
 
-func NewConnector(ctx context.Context, config *util.ConfigMap, rc *util.ConfigMap) (*DataBase, error) {
+func NewConnector(ctx context.Context, logger *log.Logger, config *util.ConfigMap, rc *util.ConfigMap) (*DataBase, error) {
+	if logger == nil {
+		logger = log.Default()
+	}
 	conf, err := parseConfig(config, rc)
 	if err != nil {
 		return nil, err
 	}
-	return NewConnectorWithConf(ctx, conf)
+	return NewConnectorWithConf(ctx, conf, logger)
 }
 
-func NewConnectorWithConf(ctx context.Context, config *DataConfig) (*DataBase, error) {
+func NewConnectorWithConf(ctx context.Context, config *DataConfig, logger *log.Logger) (*DataBase, error) {
+	if logger == nil {
+		logger = log.Default()
+	}
 	if err := config.init(); err != nil {
 		return nil, err
 	}
@@ -102,10 +108,11 @@ func NewConnectorWithConf(ctx context.Context, config *DataConfig) (*DataBase, e
 		pool:    db,
 		config:  config,
 		context: ctx,
+		logger:  logger,
 	}
-	dbConn.Users = NewUserDB(dbConn, "users")
+	dbConn.Users = NewUserDB(dbConn, "users", logger)
 	if config.UseCache {
-		cache, err := cache.NewConnectorWithConf(config.RedisConf)
+		cache, err := cache.NewConnectorWithConf(config.RedisConf, logger)
 		if err != nil {
 			logger.Println(err)
 			return nil, ErrConnectRedis
@@ -129,22 +136,22 @@ func (db *DataBase) Disconnect() error {
 }
 
 func (db *DataBase) Init() error {
-	logger.Println("initializing database")
+	db.logger.Println("initializing database")
 	file, err := os.Open(db.config.InitFile)
 	if err != nil {
-		logger.Println(err)
+		db.logger.Println(err)
 		return ErrOpenInitFile
 	}
 	defer file.Close()
 	info, err := file.Stat()
 	if err != nil {
-		logger.Println(err)
+		db.logger.Println(err)
 		return ErrOpenInitFile
 	}
 	if info.IsDir() {
 		files, err := file.ReadDir(-1)
 		if err != nil {
-			logger.Println(err)
+			db.logger.Println(err)
 			return ErrReadFile
 		}
 		for _, dirEntry := range files {
@@ -153,15 +160,15 @@ func (db *DataBase) Init() error {
 			}
 			fileEntry, err := os.Open(fmt.Sprint(info.Name(), string(os.PathSeparator), dirEntry.Name()))
 			if err != nil {
-				logger.Println(err)
+				db.logger.Println(err)
 				return ErrReadFile
 			}
-			if err := loadInitFile(db, fileEntry); err != nil {
+			if err := db.loadInitFile(fileEntry); err != nil {
 				return err
 			}
 		}
 	} else {
-		if err := loadInitFile(db, file); err != nil {
+		if err := db.loadInitFile(file); err != nil {
 			return err
 		}
 	}
@@ -169,19 +176,19 @@ func (db *DataBase) Init() error {
 	return nil
 }
 
-func loadInitFile(db *DataBase, file *os.File) error {
+func (db *DataBase) loadInitFile(file *os.File) error {
 	query, err := parseFile(file)
 	if err != nil {
-		logger.Println(err)
+		db.logger.Println(err)
 		return ErrInitDB
 	}
 	if os.Getenv("ENVIRONMENT") == "DEVELOPMENT" {
-		logger.Println(strings.ReplaceAll(query, "\\", "\\\n"))
+		db.logger.Println(strings.ReplaceAll(query, "\\", "\\\n"))
 
 	}
 	for _, q := range strings.Split(query, "\\") {
 		if _, err = db.pool.Exec(db.context, q); err != nil {
-			logger.Println(err)
+			db.logger.Println(err)
 			return ErrInitDB
 		}
 	}
@@ -204,25 +211,20 @@ func parseFile(file *os.File) (string, error) {
 	var err error
 	switch suffix {
 	case "sql":
-		logger.Println("warning: initializing database with raw sql file")
 		query = readSQL(file)
 	case "json":
-		logger.Println("parsing DB initialization file")
 		if val, err = read(file, json.Unmarshal); err == nil {
 			query = val
 		}
 	case "yaml":
-		logger.Println("parsing DB initialization file")
 		if val, err = read(file, yaml.Unmarshal); err == nil {
 			query = val
 		}
 	default:
-		logger.Println("error: invalid file type")
 		return "", ErrOpenInitFile
 	}
 	if err != nil {
-		logger.Println(err)
-		return "", ErrOpenInitFile
+		return "", err
 	}
 	return query, nil
 }
@@ -230,36 +232,34 @@ func parseFile(file *os.File) (string, error) {
 func read(file *os.File, parser func(data []byte, v any) error) (string, error) {
 	raw, err := os.ReadFile(file.Name())
 	if err != nil {
-		logger.Println(err)
-		return "", ErrReadFile
+		return "", err
 	}
 	initStruct := &DBInit{}
 	err = parser(raw, initStruct)
 	if err != nil {
-		logger.Println(err)
-		return "", ErrReadFile
+		return "", err
 	}
 	return initStruct.String(), nil
 }
 
 // DBFunction
 func (db *DataBase) CreateTable(ctx context.Context, table string, fields []DBField) error {
-	logger.Println("creating table:", table)
+	db.logger.Println("creating table:", table)
 	_, err := db.transactionWrapper(ctx, CREATE, table, fields)
 	if err != nil {
-		logger.Println(err)
+		db.logger.Println(err)
 		return ErrDBCreate
 	}
 	return nil
 }
 
 func (db *DataBase) DeleteTable(ctx context.Context, table string) error {
-	logger.Println("deleting table:", table)
+	db.logger.Println("deleting table:", table)
 
 	// selecting to check if table is empty
 	row, err := db.Select(ctx, table, nil, nil, "LIMIT 1")
 	if err != nil {
-		logger.Println(err)
+		db.logger.Println(err)
 		return ErrDBSelect
 	}
 	if len(row) > 0 {
@@ -268,120 +268,120 @@ func (db *DataBase) DeleteTable(ctx context.Context, table string) error {
 
 	_, err = db.transactionWrapper(ctx, DROP, table)
 	if err != nil {
-		logger.Println(err)
+		db.logger.Println(err)
 		return ErrDBDrop
 	}
 	return nil
 }
 
 func (db *DataBase) Select(ctx context.Context, table string, fields []FieldName, wm *WhereMap, args string) (DBResult, error) {
-	logger.Println("selecting from table:", table)
+	db.logger.Println("selecting from table:", table)
 	result, err := db.transactionWrapper(ctx, SELECT, table, fields, wm, args)
 	if err != nil {
-		logger.Println(err)
+		db.logger.Println(err)
 		return nil, ErrDBSelect
 	}
-	// logger.Printf("got data: %+v\n", result)
-	logger.Println("selected successfully")
+	// db.logger.Printf("got data: %+v\n", result)
+	db.logger.Println("selected successfully")
 	return result, nil
 }
 
 func (db *DataBase) Insert(ctx context.Context, table string, fields []FieldName, values [][]interface{}) error {
-	logger.Println("inserting into table:", table)
+	db.logger.Println("inserting into table:", table)
 	for _, v := range values {
 		if len(v) != len(fields) {
-			logger.Println("warning: number of values does not match number of fields:", len(v), "/", len(fields))
+			db.logger.Println("warning: number of values does not match number of fields:", len(v), "/", len(fields))
 		}
 	}
 	_, err := db.transactionWrapper(ctx, INSERT, table, fields, values)
 	if err != nil {
-		logger.Println(err)
+		db.logger.Println(err)
 		return ErrDBInsert
 	}
-	logger.Println("inserted successfully")
+	db.logger.Println("inserted successfully")
 	return nil
 }
 
 func (db *DataBase) Update(ctx context.Context, table string, updates map[FieldName]DBValue, wm *WhereMap) error {
-	logger.Println("updating table:", table)
+	db.logger.Println("updating table:", table)
 	_, err := db.transactionWrapper(ctx, UPDATE, table, updates, wm)
 	if err != nil {
-		logger.Println(err)
+		db.logger.Println(err)
 		return ErrDBUpdate
 	}
-	logger.Println("updated successfully")
+	db.logger.Println("updated successfully")
 	return nil
 }
 
 func (db *DataBase) Delete(ctx context.Context, table string, wm *WhereMap) error {
-	logger.Println("deleting from table:", table)
+	db.logger.Println("deleting from table:", table)
 	_, err := db.transactionWrapper(ctx, DELETE, table, wm)
 	if err != nil {
-		logger.Println(err)
+		db.logger.Println(err)
 		return ErrDBDelete
 	}
-	logger.Println("deleted successfully")
+	db.logger.Println("deleted successfully")
 	return nil
 }
 
 // transactionWrapper
 func (db *DataBase) transactionWrapper(ctx context.Context, dbFunction DBMethod, table string, args ...any) (DBResult, error) {
-	logger.Printf("wrapping %s transaction", dbFunction)
+	db.logger.Printf("wrapping %s transaction", dbFunction)
 	parsedArgs, err := parseArgs(dbFunction, args)
 	if err != nil {
-		logger.Println(err)
+		db.logger.Println(err)
 		if !errors.Is(err, ErrNoArgs) {
 			return nil, ErrParseArgs
 		}
-		logger.Println("no arguments passed")
+		db.logger.Println("no arguments passed")
 	}
 	query, err := buildQuery(dbFunction, table, parsedArgs)
 	if err != nil {
-		logger.Println(err)
+		db.logger.Println(err)
 		return nil, ErrBuildQuery
 	}
 	if os.Getenv("ENVIRONMENT") == "development" {
-		logger.Printf("query: %s", query)
+		db.logger.Printf("query: %s", query)
 	}
 	tx, err := db.pool.Begin(ctx)
 	if err != nil {
-		logger.Println(err)
+		db.logger.Println(err)
 		return nil, ErrTxStart
 	}
 	var tag pgconn.CommandTag
 	var rows DBResult
 	switch dbFunction {
 	case SELECT:
-		logger.Println("getting data")
+		db.logger.Println("getting data")
 		rows, err = db.getData(ctx, tx, query)
 	case INSERT:
-		logger.Println("inserting data")
+		db.logger.Println("inserting data")
 		err = db.insert(ctx, tx, table, parsedArgs.fields, parsedArgs.values)
 	default:
 		tag, err = tx.Exec(ctx, query)
-		logger.Printf("executed query: %s", query)
-		logger.Printf("command tag: %s", tag)
+		db.logger.Printf("executed query: %s", query)
+		db.logger.Printf("command tag: %s", tag)
 	}
 	if err != nil {
-		logger.Printf("error acting on table, rolling back;\n%s", err)
+		db.logger.Printf("error acting on table, rolling back;\n%s", err)
 		if e := tx.Rollback(ctx); e != nil {
-			logger.Println(e)
+			db.logger.Println(e)
 			return nil, ErrTxRollback
 		}
 		return nil, err
 	}
 	if err = tx.Commit(ctx); err != nil {
-		logger.Println(err)
+		db.logger.Println(err)
 		return nil, ErrTxCommit
 	}
-	logger.Println("transaction committed")
+	db.logger.Println("transaction committed")
 	return rows, nil
 }
 
 func (db *DataBase) getData(ctx context.Context, tx pgx.Tx, query string) (DBResult, error) {
 	rows, err := tx.Query(ctx, query)
 	if err != nil {
-		logger.Println(err)
+		db.logger.Println(err)
 		return nil, ErrDBSelect
 	}
 
@@ -392,7 +392,7 @@ func (db *DataBase) getData(ctx context.Context, tx pgx.Tx, query string) (DBRes
 		row := make(map[string]interface{}, len(dbFields))
 		val, err := rows.Values()
 		if err != nil {
-			logger.Println(err)
+			db.logger.Println(err)
 			return nil, ErrDBSelect
 		}
 		for i, v := range val {
@@ -415,14 +415,14 @@ func (db *DataBase) insert(ctx context.Context, tx pgx.Tx, table string, fields 
 		pgx.CopyFromRows(values),
 	)
 	if err != nil {
-		logger.Println(err)
+		db.logger.Println(err)
 		return ErrDBInsert
 	}
 	if copyCount != int64(len(values)) {
-		logger.Println("error inserting all values into table")
+		db.logger.Println("error inserting all values into table")
 		return ErrDBInsert
 	}
-	logger.Printf("inserted %d rows into %s", copyCount, table)
+	db.logger.Printf("inserted %d rows into %s", copyCount, table)
 	return nil
 }
 
@@ -485,7 +485,6 @@ func buildQuery(dbFunction DBMethod, table string, args *QueryArgs) (string, err
 }
 
 func parseArgs(dbFunction DBMethod, args []any) (*QueryArgs, error) {
-	logger.Println("parsing args")
 	if len(args) == 0 {
 		return nil, ErrNoArgs
 	}

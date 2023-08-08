@@ -1,10 +1,7 @@
 package api
 
 import (
-	"fmt"
 	"net/http"
-	"os"
-	"strings"
 
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
@@ -18,7 +15,7 @@ func (s *SessionControl) UserRoutePass(c *gin.Context) {
 		c.Set("username", session.Get("username"))
 		c.Next() // continue
 	} else {
-		logger.Println("Unauthorized access to " + c.Request.URL.Path + " from " + c.ClientIP() + " with user agent " + c.Request.UserAgent())
+		s.logger.Println("Unauthorized access to " + c.Request.URL.Path + " from " + c.ClientIP() + " with user agent " + c.Request.UserAgent())
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"message": "unauthorized",
 		})
@@ -32,7 +29,7 @@ func (s *SessionControl) GetUser(c *gin.Context) {
 	if val, ok := c.Get("username"); ok {
 		var err error
 		if user, err = s.db.GetByName(c, val.(string)); err != nil {
-			logger.Println(err)
+			s.logger.Println(err)
 			c.JSON(http.StatusNotFound, gin.H{"user": "Error finding User"})
 			c.Abort()
 			return
@@ -70,6 +67,7 @@ func (s *SessionControl) DeleteUser(c *gin.Context) {
 	if val, ok := c.Get("username"); ok {
 		username = val.(string)
 	}
+	s.logger.Println("deleting user: ", username)
 	if err := s.db.DeleteByName(c, username); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -86,13 +84,10 @@ func (s *SessionControl) Status(c *gin.Context) {
 		return
 	}
 
-	if strings.ToLower(os.Getenv("ENVIRONMENT")) == "development" {
-		fmt.Println("user session id requested: ", session.Get(id))
-	}
+	s.logger.Println("user status requested: ", session.Get(id))
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "connected",
-		"id":      session.Get(id),
 	})
 }
 
@@ -102,6 +97,7 @@ func (s *SessionControl) GetSession(c *gin.Context) {
 		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "disconnected"})
 		return
 	}
+	s.logger.Println("user session requested: ", session.Get(id))
 	c.JSON(http.StatusOK, gin.H{
 		"message": "connected",
 		"id":      session.Get(id),

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -21,12 +22,16 @@ var (
 type UserDB struct {
 	p         *DataBase
 	userTable string
+	logger    *log.Logger
 }
 
-func NewUserDB(p *DataBase, userTable string) *UserDB {
+func NewUserDB(p *DataBase, userTable string, logger *log.Logger) *UserDB {
 	userTable = strings.ToLower(userTable)
 	userTable = strings.TrimSpace(userTable)
-	return &UserDB{p, userTable}
+	if logger == nil {
+		logger = log.Default()
+	}
+	return &UserDB{p, userTable, logger}
 }
 
 func (udb *UserDB) SetTableName(userTable string) {
@@ -50,16 +55,16 @@ func (udb *UserDB) Create(ctx context.Context, name string, email string, passwo
 	}
 	user, err := udb.GetByName(ctx, name)
 	if err != nil {
-		logger.Println(err)
+		udb.logger.Println(err)
 		return nil, ErrCreateUser
 	}
-	logger.Printf("Created user %s\n", name)
+	udb.logger.Printf("Created user %s\n", name)
 	go udb.updateCache(ctx, user)
 	return user, nil
 }
 
 func (udb *UserDB) GetAll(ctx context.Context) ([]*system.User, error) {
-	logger.Println("Getting all users")
+	udb.logger.Println("Getting all users")
 	val, err := udb.p.Select(ctx, udb.userTable, []FieldName{"*"}, nil, "")
 	if err != nil {
 		return nil, err
@@ -118,7 +123,7 @@ func (udb *UserDB) getUserWithWhere(ctx context.Context, whereMap *WhereMap) (*s
 		updated = val
 	}
 	user := system.LoadUser(raw_db_user[0]["id"].(int64), raw_db_user[0]["name"].(string), raw_db_user[0]["email"].(string), &created, &updated)
-	logger.Println("Got user", user.Name)
+	udb.logger.Println("Got user", user.Name)
 	go udb.updateCache(ctx, user)
 	return user, nil
 }
@@ -233,7 +238,7 @@ func (udb *UserDB) GetFromCache(ctx context.Context, key interface{}) (*system.U
 		user := system.User{}
 		if s, ok := val.(string); ok {
 			if err := json.Unmarshal([]byte(s), &user); err != nil {
-				logger.Println(err)
+				udb.logger.Println(err)
 				return nil, false
 			}
 		}

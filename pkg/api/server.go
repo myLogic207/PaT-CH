@@ -24,7 +24,6 @@ const (
 )
 
 var (
-	logger               = log.New(log.Writer(), "api: ", log.Flags())
 	ErrConnectionRefused = errors.New("connection refused")
 	ErrStartServer       = errors.New("could not start server")
 	ErrStopServer        = errors.New("could not stop server")
@@ -41,18 +40,19 @@ type Server struct {
 	server     *http.Server
 	ctx        context.Context
 	sessionCtl *SessionControl
+	logger     *log.Logger
 	running    bool
 }
 
-func NewServer(ctx context.Context, db UserTable, config *util.ConfigMap, rc *util.ConfigMap) (*Server, error) {
+func NewServer(ctx context.Context, logger *log.Logger, db UserTable, config *util.ConfigMap, rc *util.ConfigMap) (*Server, error) {
 	conf, err := ParseConf(config, rc)
 	if err != nil {
 		logger.Println(err)
 	}
-	return NewServerWithConf(ctx, db, conf)
+	return NewServerWithConf(ctx, logger, db, conf)
 }
 
-func NewServerWithConf(ctx context.Context, db UserTable, config *ApiConfig) (*Server, error) {
+func NewServerWithConf(ctx context.Context, logger *log.Logger, db UserTable, config *ApiConfig) (*Server, error) {
 	var cache sessions.Store
 	secret_store := []byte("secret")
 	if config.Redis {
@@ -67,22 +67,22 @@ func NewServerWithConf(ctx context.Context, db UserTable, config *ApiConfig) (*S
 		logger.Println("No cache provided, using cookie fallback")
 		cache = cookie.NewStore(secret_store)
 	}
-	return NewServerWithCacheConf(ctx, db, config, cache)
+	return NewServerWithCacheConf(ctx, logger, db, config, cache)
 }
 
-func NewServerWithCache(ctx context.Context, db UserTable, conf *util.ConfigMap, cache sessions.Store) (*Server, error) {
+func NewServerWithCache(ctx context.Context, logger *log.Logger, db UserTable, conf *util.ConfigMap, cache sessions.Store) (*Server, error) {
 	config, err := ParseConf(conf, nil)
 	if err != nil {
 		logger.Println(err)
 	}
-	return NewServerWithCacheConf(ctx, db, config, cache)
+	return NewServerWithCacheConf(ctx, logger, db, config, cache)
 }
 
 // Actual server creation
-func NewServerWithCacheConf(ctx context.Context, db UserTable, config *ApiConfig, cache sessions.Store) (*Server, error) {
+func NewServerWithCacheConf(ctx context.Context, logger *log.Logger, db UserTable, config *ApiConfig, cache sessions.Store) (*Server, error) {
 	config.init()
-	sessionCtl := NewSessionControl(db)
-	router := NewRouter(sessionCtl, cache)
+	sessionCtl := NewSessionControl(db, logger)
+	router := NewRouter(sessionCtl, logger, cache)
 
 	server := &http.Server{
 		Addr:    config.Addr(),
@@ -99,26 +99,27 @@ func NewServerWithCacheConf(ctx context.Context, db UserTable, config *ApiConfig
 		ctx:        ctx,
 		sessionCtl: sessionCtl,
 		running:    false,
+		logger:     logger,
 	}, nil
 }
 
 func (s *Server) Init() error {
 	file, err := os.Open(s.config.InitFile)
 	if err != nil {
-		logger.Println(err)
+		s.logger.Println(err)
 		return ErrOpenInitFile
 	}
 	defer file.Close()
 	// if folder, if file, if not exist, create
 	var info os.FileInfo
 	if info, err = file.Stat(); err != nil {
-		logger.Println("Init file is a directory")
+		s.logger.Println("Init file is a directory")
 		return ErrOpenInitFile
 	}
 	if info.IsDir() {
 		files, err := os.ReadDir(s.config.InitFile)
 		if err != nil {
-			logger.Println(err)
+			s.logger.Println(err)
 			return ErrOpenInitFile
 		}
 		for _, f := range files {
@@ -127,44 +128,44 @@ func (s *Server) Init() error {
 			}
 			info, err := f.Info()
 			if err != nil {
-				logger.Println(err)
+				s.logger.Println(err)
 				continue
 			}
-			if err := loadInitFile(fmt.Sprint(s.config.InitFile, string(os.PathSeparator), info.Name()), s.sessionCtl); err != nil {
-				logger.Println(err)
+			if err := s.loadInitFile(fmt.Sprint(s.config.InitFile, string(os.PathSeparator), info.Name()), s.sessionCtl); err != nil {
+				s.logger.Println(err)
 				return ErrInitServer
 			}
 		}
 		return nil
 	}
-	return loadInitFile(s.config.InitFile, s.sessionCtl)
+	return s.loadInitFile(s.config.InitFile, s.sessionCtl)
 }
 
-func loadInitFile(path string, sessionCtl *SessionControl) error {
+func (s *Server) loadInitFile(path string, sessionCtl *SessionControl) error {
 	if !strings.HasSuffix(path, ".json") {
 		return errors.New("not a json file: " + path)
 	}
-	logger.Println("Loading init file: " + path)
+	s.logger.Println("Loading init file: " + path)
 	cont, err := os.ReadFile(path)
 	if err != nil {
-		logger.Println(err)
+		s.logger.Println(err)
 		return errors.New("could not read file: " + path)
 	}
 	patches, err := ParsePatches(string(cont))
 	if err != nil {
-		logger.Println(err)
+		s.logger.Println(err)
 		return errors.New("could not parse file: " + path)
 	}
 	return patches.Apply()
 }
 
 func (s *Server) Start() error {
-	logger.Println("Starting server")
+	s.logger.Println("Starting server")
 	s.running = true
 	if s.config.cert == nil {
 		go func() {
 			if err := s.server.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
-				logger.Fatalln(err)
+				s.logger.Fatalln(err)
 			}
 		}()
 	} else {
@@ -173,25 +174,25 @@ func (s *Server) Start() error {
 		}
 		go func() {
 			if err := s.server.ListenAndServeTLS(s.config.cert.Cert, s.config.cert.Key); !errors.Is(err, http.ErrServerClosed) {
-				logger.Fatalln(err)
+				s.logger.Fatalln(err)
 			}
 		}()
 	}
-	logger.Println("Serving https on " + s.Addr("/"))
+	s.logger.Println("Serving https on " + s.Addr("/"))
 	return nil
 }
 
 func (s *Server) Stop() error {
 	if !s.running {
-		logger.Println("Server is not running")
+		s.logger.Println("Server is not running")
 		return ErrStopServer
 	}
 	if err := s.server.Shutdown(s.ctx); err != nil {
-		logger.Println(err)
+		s.logger.Println(err)
 		return ErrStopServer
 	}
 	s.running = false
-	log.Println("Server stopped")
+	s.logger.Println("Server stopped")
 	return nil
 }
 
@@ -219,16 +220,16 @@ type Certificate struct {
 func (c *Certificate) Validate() bool {
 	cert, err := tls.LoadX509KeyPair(c.Cert, c.Key)
 	if err != nil {
-		logger.Println(err)
+		log.Println(err)
 		return false
 	}
 	if cert.Leaf == nil {
-		logger.Println("Parsing certificate successful")
+		log.Println("Parsing certificate successful")
 		return true
 	}
 
 	if cert.Leaf.PublicKeyAlgorithm != x509.RSA {
-		logger.Println("Leaf certificate is not RSA")
+		log.Println("Leaf certificate is not RSA")
 		return false
 	}
 	return false

@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 	"testing"
@@ -46,7 +47,7 @@ func TestMain(m *testing.M) {
 		DBname:   "patch_db_test",
 		SSLmode:  "verify-full",
 	}
-	db, err := NewConnectorWithConf(ctx, config)
+	db, err := NewConnectorWithConf(ctx, config, log.Default())
 	if err != nil {
 		panic(err)
 	}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -62,13 +63,13 @@ func deletePatch(c *gin.Context) {
 func applyPatch(c *gin.Context) {
 	var patch ForwardPatch
 	if err := c.ShouldBindJSON(&patch); err != nil {
-		logger.Println(err)
+		log.Println(err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": ErrApplyPatch})
 		return
 	}
-	logger.Println("applying patch via api")
+	log.Println("applying patch via api")
 	if err := registerPath(patch.Path, patch.Dest); err != nil {
-		logger.Println(err)
+		log.Println(err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": ErrApplyPatch})
 		return
 	}
@@ -85,7 +86,7 @@ func registerPath(path, dest string) error {
 	if url, err = validatePath(dest); err != nil {
 		return err
 	}
-	logger.Printf("Adding path %s -> %s\n", path, dest)
+	log.Printf("Adding path %s -> %s\n", path, dest)
 	pathTable[path] = url
 	return nil
 }
@@ -127,7 +128,7 @@ func validatePath(rawurl string) (*url.URL, error) {
 }
 
 func ForwardRequest(c *gin.Context) {
-	logger.Println("Forwarding request...")
+	log.Println("Forwarding request...")
 	path := c.Param("dest")
 	dest, ok := pathTable[path]
 	if !ok {

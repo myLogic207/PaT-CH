@@ -4,13 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"testing"
 	"time"
 )
 
 func TestNewServer(t *testing.T) {
 	t.Log("Testing NewServer")
-	server, err := NewServerWithConf(context.Background(), NewUserIMDB(), &ApiConfig{
+	server, err := NewServerWithConf(context.Background(), log.Default(), NewUserIMDB(), &ApiConfig{
 		Host:  "localhost",
 		Port:  33080,
 		Redis: false,

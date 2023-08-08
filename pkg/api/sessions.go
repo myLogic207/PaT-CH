@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"log"
 	"math/rand"
 	"net/http"
 
@@ -23,6 +24,7 @@ type SessionControl struct {
 	key_len  int
 	sessions map[string]sessions.Session
 	db       UserTable
+	logger   *log.Logger
 }
 
 type rawUser struct {
@@ -31,11 +33,12 @@ type rawUser struct {
 	Password string `json:"password"`
 }
 
-func NewSessionControl(db UserTable) *SessionControl {
+func NewSessionControl(db UserTable, logger *log.Logger) *SessionControl {
 	return &SessionControl{
 		key_len:  16,
 		db:       db,
 		sessions: make(map[string]sessions.Session),
+		logger:   logger,
 	}
 }
 
@@ -70,13 +73,13 @@ func (s *SessionControl) SetDB(db UserTable) {
 func (s *SessionControl) register(c *gin.Context) {
 	var raw rawUser
 	if err := c.BindJSON(&raw); err != nil {
-		logger.Println(err)
+		s.logger.Println(err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": ErrRegister})
 		return
 	}
 	user, err := s.db.Create(c, raw.Username, "", raw.Password)
 	if err != nil {
-		logger.Println(err)
+		s.logger.Println(err)
 		c.JSON(http.StatusConflict, gin.H{"error": ErrRegisterAlready})
 		return
 	}
@@ -89,13 +92,13 @@ func (s *SessionControl) register(c *gin.Context) {
 func (s *SessionControl) Connect(c *gin.Context) {
 	var raw rawUser
 	if err := c.BindJSON(&raw); err != nil {
-		logger.Println(err)
+		s.logger.Println(err)
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": ErrConnect})
 		return
 	}
 	user, err := s.db.Authenticate(c, raw.Username, raw.Password)
 	if err != nil {
-		logger.Println(err)
+		s.logger.Println(err)
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": ErrConnect})
 		return
 	}
@@ -105,7 +108,7 @@ func (s *SessionControl) Connect(c *gin.Context) {
 	session.Set(id, s.getNewId())
 	session.Set("status", "authorized")
 	if err := session.Save(); err != nil {
-		logger.Println(err)
+		s.logger.Println(err)
 		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "Failed to save session"})
 		return
 	}
