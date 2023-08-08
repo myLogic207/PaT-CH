@@ -13,49 +13,54 @@ import (
 )
 
 func main() {
+	log.Println("starting System...")
 	prefix, timeout, err := setup.PrepareEnvironment()
 	if err != nil {
 		log.Fatalln("error while preparing environment: ", err)
 	}
+	logger, err := setup.PrepareLogger(prefix)
+	if err != nil {
+		log.Fatalln("error while preparing logger: ", err)
+	}
 
-	log.Print(setup.LOGO)
+	logger.Print(setup.LOGO)
 
-	log.Println("starting ", prefix, " server...")
+	logger.Println("starting ", prefix, " server...")
 	mainContext, mainStop := context.WithCancel(context.Background())
 
 	config := util.LoadConfig(prefix)
 	dbConf, redisConf, err := setup.PrepareDatabase(config)
 	if err != nil {
-		log.Fatalln("error while preparing data: ", err)
+		logger.Fatalln("error while preparing data: ", err)
 	}
 	apiConf, cacheConf, err := setup.PrepareApi(config)
 	if err != nil {
-		log.Fatalln("error while preparing api: ", err)
+		logger.Fatalln("error while preparing api: ", err)
 	}
 
 	database, err := data.NewConnector(mainContext, dbConf, redisConf)
 	if err != nil {
-		log.Fatalln("error while creating database connector: ", err)
+		logger.Fatalln("error while creating database connector: ", err)
 	}
 	server, err := api.NewServer(mainContext, database.Users, apiConf, cacheConf)
 	if err != nil {
-		log.Fatalln("error while creating server: ", err)
+		logger.Fatalln("error while creating server: ", err)
 	}
 
-	log.Println("Components set up and initialized, starting...")
+	logger.Println("Components set up and initialized, starting...")
 	if err := database.Init(); err == data.ErrOpenInitFile {
-		log.Println("Cannot open setup-file/file not found, skipping database initialization")
+		logger.Println("Cannot open setup-file/file not found, skipping database initialization")
 	} else if err != nil {
-		log.Fatalln("error while initializing database: ", err)
+		logger.Fatalln("error while initializing database: ", err)
 	}
 	server.Init()
 	if err := server.Start(); err == api.ErrOpenInitFile {
-		log.Println("Cannot open setup-file/file not found, skipping server initialization")
+		logger.Println("Cannot open setup-file/file not found, skipping server initialization")
 	} else if err != nil {
-		log.Fatalln("error while starting server:", err)
+		logger.Fatalln("error while starting server:", err)
 	}
 	defer server.Stop()
-	log.Println("Server started")
+	logger.Println("Server started")
 
 	if timeout > 0 {
 		// timeout in seconds
