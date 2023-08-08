@@ -1,0 +1,25 @@
+{
+    "workbench.colorCustomizations": {
+        "activityBar.activeBackground": "#2b2b4a",
+        "activityBar.background": "#2b2b4a",
+        "activityBar.foreground": "#e7e7e7",
+        "activityBar.inactiveForeground": "#e7e7e799",
+        "activityBarBadge.background": "#8d5252",
+        "activityBarBadge.foreground": "#e7e7e7",
+        "commandCenter.border": "#e7e7e799",
+        "sash.hoverBorder": "#2b2b4a",
+        "statusBar.background": "#18182a",
+        "statusBar.foreground": "#e7e7e7",
+        "statusBarItem.hoverBackground": "#2b2b4a",
+        "statusBarItem.remoteBackground": "#18182a",
+        "statusBarItem.remoteForeground": "#e7e7e7",
+        "titleBar.activeBackground": "#18182a",
+        "titleBar.activeForeground": "#e7e7e7",
+        "titleBar.inactiveBackground": "#18182a99",
+        "titleBar.inactiveForeground": "#e7e7e799"
+    },
+    "peacock.color": "#18182a",
+    "dotenv.enableAutocloaking": true,
+    "go.testFlags": ["-v"],
+    "go.testEnvFile": "${workspaceFolder}/test.env",
+}
