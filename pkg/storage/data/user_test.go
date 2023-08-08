@@ -1,9 +1,11 @@
 package data
 
 import (
-	"fmt"
+	"errors"
 	"testing"
 	"time"
+
+	"github.com/myLogic207/PaT-CH/internal/system"
 )
 
 func inTimeSpan(start, end, check time.Time) bool {
@@ -14,8 +16,9 @@ func inTimeSpan(start, end, check time.Time) bool {
 }
 
 func TestUserDB(t *testing.T) {
-	tablename := tableName("test_user")
-	TESTDB.CreateTable(ctx, tablename, []DBField{
+	testBeginTime := time.Now().UTC()
+	tableName := tableName("test_user")
+	TEST_DB.CreateTable(ctx, tableName, []DBField{
 		{"id", "serial", 0, "PRIMARY KEY"},
 		{"name", "text", 0, ""},
 		{"email", "text", 0, ""},
@@ -23,48 +26,74 @@ func TestUserDB(t *testing.T) {
 		{"created_at", "timestamp", 0, ""},
 		{"updated_at", "timestamp", 0, ""},
 	})
-	defer TESTDB.DeleteTable(ctx, tablename)
-	TESTDB.Users.SetTableName(tablename)
-	before := time.Now()
-	TESTDB.Users.Create(ctx, "test", "test@example.net", "test123")
-	all, err := TESTDB.Select(ctx, tablename, []FieldName{"*"}, nil, "")
+	defer TEST_DB.DeleteTable(ctx, tableName)
+	TEST_DB.Users.SetTableName(tableName)
+	TEST_DB.Users.Create(ctx, "test", "test@example.net", "test123")
+
+	defer TEST_DB.Delete(ctx, tableName, nil)
+	if err := testUserDBSelect(t, testBeginTime); err != nil {
+		t.Error(err)
+		t.FailNow()
+	}
+
+	user, err := testUserAuthenticate(t)
 	if err != nil {
 		t.Error(err)
 		t.FailNow()
 	}
-	fmt.Printf("all: %+v", all)
-	defer TESTDB.Delete(ctx, tablename, nil)
-	user, err := TESTDB.Users.GetByName(ctx, "test")
+	user, err = testUserDBUpdate(t, user)
 	if err != nil {
 		t.Error(err)
 		t.FailNow()
+	}
+
+	if err := TEST_DB.Users.DeleteById(ctx, user.ID()); err != nil {
+		t.Error(err)
+		t.FailNow()
+	}
+	if _, err := TEST_DB.Users.GetById(ctx, user.ID()); err == nil {
+		t.Error("user not deleted")
+		t.FailNow()
+	}
+}
+
+func testUserDBSelect(t *testing.T, testBeginTime time.Time) error {
+	user, err := TEST_DB.Users.GetByName(ctx, "test")
+	if err != nil {
+		return err
 	}
 	if user.Name != "test" {
-		t.Error("name not set")
-		t.FailNow()
+		return errors.New("name not set")
 	}
 	if user.Email != "test@example.net" {
 		t.Error("email not set")
-		t.FailNow()
 	}
-	if user.Password() != "test123" {
-		t.Error("password not set")
-		t.FailNow()
+	if !inTimeSpan(testBeginTime, time.Now().UTC(), user.CreatedAt) {
+		t.Log("Now:", time.Now().UTC())
+		t.Error("created not recently:", user.CreatedAt)
 	}
-	if !inTimeSpan(before, time.Now(), user.CreatedAt) {
-		t.Error("created not recently")
-		t.FailNow()
+	return nil
+}
+
+func testUserAuthenticate(t *testing.T) (*system.User, error) {
+	user, err := TEST_DB.Users.AuthenticateByName(ctx, "test", "test123")
+	if err != nil {
+		t.Error("authenticate failed:")
+		return nil, err
 	}
+	return user, nil
+}
+
+func testUserDBUpdate(t *testing.T, user *system.User) (*system.User, error) {
 	user.Name = "test2"
 	user.Email = "example3@test.net"
-	user.SetPassword("abcd1234")
-	if _, err := TESTDB.Users.Update(ctx, user); err != nil {
+	if _, err := TEST_DB.Users.Update(ctx, user); err != nil {
 		t.Log("\n")
 		t.Error(err)
 		t.Log("\n")
 		t.FailNow()
 	}
-	user2, err := TESTDB.Users.GetById(ctx, user.ID())
+	user2, err := TEST_DB.Users.GetById(ctx, user.ID())
 	if err != nil {
 		t.Error(err)
 		t.FailNow()
@@ -77,16 +106,5 @@ func TestUserDB(t *testing.T) {
 		t.Error("email not updated")
 		t.FailNow()
 	}
-	if user2.Password() != "abcd1234" {
-		t.Error("password updated")
-		t.FailNow()
-	}
-	if err := TESTDB.Users.DeleteById(ctx, user.ID()); err != nil {
-		t.Error(err)
-		t.FailNow()
-	}
-	if _, err := TESTDB.Users.GetById(ctx, user.ID()); err == nil {
-		t.Error("user not deleted")
-		t.FailNow()
-	}
+	return user2, nil
 }

@@ -5,11 +5,13 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"os"
+	"strings"
 	"testing"
 )
 
 var ctx context.Context = context.Background()
-var TESTDB *DataBase
+var TEST_DB *DataBase
 
 func nameExt() string {
 	namext, err := rand.Prime(rand.Reader, 64)
@@ -24,13 +26,23 @@ func tableName(name string) string {
 }
 
 func TestMain(m *testing.M) {
-	// config := DefaultConfig()
+	var db_test_password string
+
+	if file, ok := os.LookupEnv("PATCHTEST_DB_PASSWORD_FILE"); !ok {
+		panic("PATCHTEST_DB_PASSWORD_FILE not set")
+	} else if _, err := os.Stat(file); err != nil {
+		panic(err)
+	} else if raw_db_test_password, err := os.ReadFile(file); err != nil {
+		panic(err)
+	} else {
+		db_test_password = strings.Trim(string(raw_db_test_password), "\r\n")
+	}
+
 	config := &DataConfig{
-		Host: "patch-test-6310.7tc.cockroachlabs.cloud",
-		Port: 26257,
-		User: "patch",
-		// TODO: REMOVE THE FUCKING PASSWORD FROM THE SOURCE CODE
-		password: "MDuKbW__xZs3guKrlK-AdA",
+		Host:     "patch-test-6310.7tc.cockroachlabs.cloud",
+		Port:     26257,
+		User:     "patch_test",
+		password: db_test_password,
 		DBname:   "patch_db_test",
 		SSLmode:  "verify-full",
 	}
@@ -38,13 +50,13 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		panic(err)
 	}
-	TESTDB = db
+	TEST_DB = db
 	m.Run()
 }
 
 func TestTableInsert(t *testing.T) {
 	tableName := tableName("test_table")
-	if err := TESTDB.CreateTable(ctx, tableName, []DBField{
+	if err := TEST_DB.CreateTable(ctx, tableName, []DBField{
 		{"testKey", "text", 0, "PRIMARY KEY"},
 		{"testValue", "text", 0, ""},
 		{"testData", "text", 0, ""},
@@ -59,13 +71,13 @@ func TestTableInsert(t *testing.T) {
 		{"testK3", "testV3", "testD3"},
 		{"testK4", "testV4", "testD4"},
 	}
-	if err := TESTDB.Insert(ctx, tableName, []FieldName{"testKey", "testValue", "testData"}, testDataSet); err != nil {
+	if err := TEST_DB.Insert(ctx, tableName, []FieldName{"testKey", "testValue", "testData"}, testDataSet); err != nil {
 		t.Error("error inserting into table: ", err)
 		t.FailNow()
 	}
 	t.Log("inserted data")
 	wm := NewWhereMap(map[FieldName]interface{}{"testKey": "testK3"})
-	if val, err := TESTDB.Select(ctx, tableName, []FieldName{"testKey", "TestData"}, wm, ""); err == nil {
+	if val, err := TEST_DB.Select(ctx, tableName, []FieldName{"testKey", "TestData"}, wm, ""); err == nil {
 		for _, v := range val {
 			t.Log("row: ", v)
 		}
@@ -74,7 +86,7 @@ func TestTableInsert(t *testing.T) {
 		t.FailNow()
 	}
 	t.Log("got data back")
-	if err := TESTDB.DeleteTable(ctx, tableName); err == nil {
+	if err := TEST_DB.DeleteTable(ctx, tableName); err == nil {
 		t.Error("error: deleted full table")
 		t.FailNow()
 	} else if errors.Is(err, ErrTableNotEmpty) {
@@ -84,12 +96,12 @@ func TestTableInsert(t *testing.T) {
 		t.FailNow()
 	}
 	// clear table
-	if err := TESTDB.Delete(ctx, tableName, nil); err != nil {
+	if err := TEST_DB.Delete(ctx, tableName, nil); err != nil {
 		t.Error("error deleting from table: ", err)
 		t.FailNow()
 	}
 	t.Log("cleared table")
-	if err := TESTDB.DeleteTable(ctx, tableName); err != nil {
+	if err := TEST_DB.DeleteTable(ctx, tableName); err != nil {
 		t.Error("error deleting table: ", err)
 		t.FailNow()
 	}
@@ -99,7 +111,7 @@ func TestTableInsert(t *testing.T) {
 
 func TestUpdate(t *testing.T) {
 	tableName := tableName("test_table")
-	if err := TESTDB.CreateTable(ctx, tableName, []DBField{
+	if err := TEST_DB.CreateTable(ctx, tableName, []DBField{
 		{"testKey", "text", 0, "PRIMARY KEY"},
 		{"testValue", "text", 0, ""},
 		{"testData", "text", 0, ""},
@@ -111,13 +123,13 @@ func TestUpdate(t *testing.T) {
 	testDataSet := [][]interface{}{
 		{"testK1", "testV1", "testD1"},
 	}
-	if err := TESTDB.Insert(ctx, tableName, []FieldName{"testKey", "testValue", "testData"}, testDataSet); err != nil {
+	if err := TEST_DB.Insert(ctx, tableName, []FieldName{"testKey", "testValue", "testData"}, testDataSet); err != nil {
 		t.Error("error inserting into table: ", err)
 		t.FailNow()
 	}
 	t.Log("inserted data")
 	wm := NewWhereMap(map[FieldName]interface{}{"testKey": "testK1"})
-	if err := TESTDB.Update(ctx, tableName, map[FieldName]DBValue{
+	if err := TEST_DB.Update(ctx, tableName, map[FieldName]DBValue{
 		"testValue": "testV2",
 		"testData":  "testD2",
 	}, wm); err != nil {
@@ -125,7 +137,7 @@ func TestUpdate(t *testing.T) {
 		t.FailNow()
 	}
 	t.Log("updated table")
-	if val, err := TESTDB.Select(ctx, tableName, []FieldName{"testKey", "testValue", "testData"}, wm, ""); err == nil {
+	if val, err := TEST_DB.Select(ctx, tableName, []FieldName{"testKey", "testValue", "testData"}, wm, ""); err == nil {
 		for _, v := range val {
 			t.Log("row: ", v)
 		}
@@ -134,12 +146,12 @@ func TestUpdate(t *testing.T) {
 		t.FailNow()
 	}
 	t.Log("got data back")
-	if err := TESTDB.Delete(ctx, tableName, nil); err != nil {
+	if err := TEST_DB.Delete(ctx, tableName, nil); err != nil {
 		t.Error("error deleting from table: ", err)
 		t.FailNow()
 	}
 	t.Log("cleared table")
-	if err := TESTDB.DeleteTable(ctx, tableName); err != nil {
+	if err := TEST_DB.DeleteTable(ctx, tableName); err != nil {
 		t.Error("error deleting table: ", err)
 		t.FailNow()
 	}
@@ -149,7 +161,7 @@ func TestUpdate(t *testing.T) {
 
 func TestTable(t *testing.T) {
 	tableName := fmt.Sprintf("test_delete_%s", nameExt())
-	if err := TESTDB.CreateTable(ctx, tableName, []DBField{
+	if err := TEST_DB.CreateTable(ctx, tableName, []DBField{
 		{"testKey", "text", 0, "PRIMARY KEY"},
 		{"testValue", "text", 0, ""},
 		{"testData", "text", 0, ""},
@@ -158,7 +170,7 @@ func TestTable(t *testing.T) {
 		t.FailNow()
 	}
 	t.Log("created table")
-	if err := TESTDB.DeleteTable(ctx, tableName); err != nil {
+	if err := TEST_DB.DeleteTable(ctx, tableName); err != nil {
 		t.Error(err)
 		t.FailNow()
 	}

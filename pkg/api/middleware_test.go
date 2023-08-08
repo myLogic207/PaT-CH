@@ -8,6 +8,7 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
+	"net/http/cookiejar"
 	"os"
 	"strings"
 	"testing"
@@ -37,19 +38,19 @@ func startTestServer() *Server {
 	return s
 }
 
-var TESTSERVER *Server = startTestServer()
+var TEST_SERVER *Server = startTestServer()
 
 func TestMain(m *testing.M) {
 	exit := m.Run()
 	time.Sleep(10 * time.Nanosecond)
-	TESTSERVER.Stop()
+	TEST_SERVER.Stop()
 	os.Exit(exit)
 }
 
 func TestServer(t *testing.T) {
 	t.Log("Testing Server Requests")
 
-	resp, err := http.DefaultClient.Get(TESTSERVER.Addr("/api/v1/health"))
+	resp, err := http.DefaultClient.Get(TEST_SERVER.Addr("/api/v1/health"))
 	if err != nil {
 		t.Error(err)
 		return
@@ -64,15 +65,15 @@ func TestServer(t *testing.T) {
 
 func TestSessionNonAuth(t *testing.T) {
 	t.Log("Testing Session Middleware")
-	resp, err := http.DefaultClient.Get(TESTSERVER.Addr("/api/v1/session"))
+	resp, err := http.DefaultClient.Get(TEST_SERVER.Addr("/api/v1/user/session"))
 	fmt.Print("\n")
 	if err != nil {
 		t.Error(err)
 		return
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusForbidden {
-		t.Errorf("Expected 403, got %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("Expected 401, got %d", resp.StatusCode)
 	}
 	t.Log("Status Successful")
 }
@@ -85,7 +86,13 @@ type SessionResponse struct {
 
 func TestSessionUser(t *testing.T) {
 	t.Log("Testing Session Middleware")
-	client := http.Client{}
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Error(err)
+	}
+	client := http.Client{
+		Jar: jar,
+	}
 	user := rawUser{
 		Username: "test",
 		Password: "test123",
@@ -94,7 +101,7 @@ func TestSessionUser(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	register_req, err := http.NewRequest("POST", TESTSERVER.Addr("/api/v1/register"), strings.NewReader(string(login)))
+	register_req, err := http.NewRequest("POST", TEST_SERVER.Addr("/api/v1/register"), strings.NewReader(string(login)))
 	if err != nil {
 		t.Error(err)
 	}
@@ -123,7 +130,7 @@ func TestSessionUser(t *testing.T) {
 	}
 	t.Log("Register Successful")
 
-	resp, err = client.Get(TESTSERVER.Addr("/api/v1/status"))
+	resp, err = client.Get(TEST_SERVER.Addr("/api/v1/user/status"))
 	if err != nil {
 		t.Error(err)
 	}
@@ -134,7 +141,7 @@ func TestSessionUser(t *testing.T) {
 		t.FailNow()
 	}
 
-	login_req, err := http.NewRequest("POST", TESTSERVER.Addr("/api/v1/connect"), strings.NewReader(string(login)))
+	login_req, err := http.NewRequest("POST", TEST_SERVER.Addr("/api/v1/connect"), strings.NewReader(string(login)))
 	if err != nil {
 		t.Error(err)
 	}
@@ -163,7 +170,7 @@ func TestSessionUser(t *testing.T) {
 	}
 	t.Log("Connect Successful")
 
-	// resp, err = http.DefaultClient.Get(TESTSERVER.Addr("/api/v1/status"))
+	// resp, err = client.Get(TEST_SERVER.Addr("/api/v1/user/status"))
 	// if err != nil {
 	// 	t.Error(err)
 	// }
@@ -174,7 +181,7 @@ func TestSessionUser(t *testing.T) {
 	// 	t.FailNow()
 	// }
 
-	resp, err = client.Get(TESTSERVER.Addr("/api/v1/session"))
+	resp, err = client.Get(TEST_SERVER.Addr("/api/v1/user/session"))
 	if err != nil {
 		t.Error(err)
 	}
@@ -201,7 +208,7 @@ func TestSessionUser(t *testing.T) {
 	}
 	t.Log("Status Successful")
 
-	delete_user, err := http.NewRequest("DELETE", TESTSERVER.Addr("/api/v1/user"), nil)
+	delete_user, err := http.NewRequest("DELETE", TEST_SERVER.Addr("/api/v1/user"), nil)
 	if err != nil {
 		t.Error(err)
 	}
