@@ -19,7 +19,7 @@ type UserIMDB struct {
 	UserTable
 	Users       map[int64]*system.User
 	IDPasswords map[int64]string
-	idcounter   int64
+	idCounter   int64
 }
 
 func NewUserIMDB() *UserIMDB {
@@ -102,7 +102,7 @@ func (u *UserIMDB) DeleteByName(ctx context.Context, name string) error {
 }
 
 func (u *UserIMDB) nextId() int64 {
-	i := u.idcounter
-	u.idcounter++
+	i := u.idCounter
+	u.idCounter++
 	return i
 }

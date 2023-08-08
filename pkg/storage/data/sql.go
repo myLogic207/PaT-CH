@@ -50,8 +50,8 @@ const (
 	SELECT DBMethod = "SELECT"
 	UPDATE DBMethod = "UPDATE"
 	DELETE DBMethod = "DELETE"
-	CREATE DBMethod = "CREATETABLE"
-	DROP   DBMethod = "DROPTABLE"
+	CREATE DBMethod = "CREATE TABLE"
+	DROP   DBMethod = "DROP TABLE"
 )
 
 type (

@@ -42,15 +42,15 @@ func main() {
 		log.Fatalln("error while creating server: ", err)
 	}
 
-	log.Println("Components setupialized, starting...")
+	log.Println("Components set up and initialized, starting...")
 	if err := database.Init(); err == data.ErrOpenInitFile {
-		log.Println("Cannot open setup-file/file not found, skipping database setupialization")
+		log.Println("Cannot open setup-file/file not found, skipping database initialization")
 	} else if err != nil {
-		log.Fatalln("error while setupializing database: ", err)
+		log.Fatalln("error while initializing database: ", err)
 	}
 	server.Init()
 	if err := server.Start(); err == api.ErrOpenInitFile {
-		log.Println("Cannot open setup-file/file not found, skipping server setupialization")
+		log.Println("Cannot open setup-file/file not found, skipping server initialization")
 	} else if err != nil {
 		log.Fatalln("error while starting server:", err)
 	}

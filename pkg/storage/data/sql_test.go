@@ -14,11 +14,11 @@ var ctx context.Context = context.Background()
 var TEST_DB *DataBase
 
 func nameExt() string {
-	namext, err := rand.Prime(rand.Reader, 64)
+	namExt, err := rand.Prime(rand.Reader, 64)
 	if err != nil {
 		panic(err)
 	}
-	return namext.String()
+	return namExt.String()
 }
 
 func tableName(name string) string {

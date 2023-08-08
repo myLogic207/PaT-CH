@@ -7,9 +7,9 @@ import (
 
 func TestConfigLoad(t *testing.T) {
 	t.Log("Testing Config Load")
-	os.Setenv("PATCH_TESTSIMPLE", "test")
-	os.Setenv("PATCH_TESTMAP_TEST", "abcde")
-	config := LoadConfig("PATCH")
+	os.Setenv("PATCHTEST_SIMPLE", "test")
+	os.Setenv("PATCHTEST_MAP_TEST", "abcde")
+	config := LoadConfig("PATCHTEST")
 	if config == nil {
 		t.Error("Config is nil")
 	}
@@ -34,9 +34,9 @@ func TestConfigLoad(t *testing.T) {
 }
 
 func TestConfigWithFile(t *testing.T) {
-	testvalue := "abcdefg1234567!"
+	testValue := "abcdefg1234567!"
 	t.Log("Testing Config Load with File")
-	if err := os.WriteFile("test_conf.env", []byte(testvalue), 0644); err != nil {
+	if err := os.WriteFile("test_conf.env", []byte(testValue), 0644); err != nil {
 		t.Error("Failed to create test file")
 		t.FailNow()
 	}
@@ -48,7 +48,7 @@ func TestConfigWithFile(t *testing.T) {
 	}
 	t.Logf("Config:\n%v", config.Sprint())
 	if val, ok := config.Get("SiMPLe"); ok {
-		if val.(string) != testvalue {
+		if val.(string) != testValue {
 			t.Error("Config is not loaded correctly (level 1)")
 		}
 	} else {

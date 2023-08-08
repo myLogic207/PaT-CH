@@ -12,16 +12,16 @@ import (
 )
 
 var (
-	logger           = log.New(os.Stdout, "system: ", log.LstdFlags)
-	ErrNotSplittable = errors.New("cannot split into minimum (2) parts")
-	ErrConfNotEmpy   = errors.New("config field not empty")
-	ErrFieldNil      = errors.New("supplied field cannot be nil")
+	logger          = log.New(os.Stdout, "system: ", log.LstdFlags)
+	ErrNotSplitAble = errors.New("cannot split into minimum (2) parts")
+	ErrConfNotEmpty = errors.New("config field not empty")
+	ErrFieldNil     = errors.New("supplied field cannot be nil")
 )
 
 func twoSplit(variable string, splitter string) (string, string, error) {
 	split := strings.Split(variable, splitter)
 	if len(split) < 2 {
-		return "", "", ErrNotSplittable
+		return "", "", ErrNotSplitAble
 	}
 	key, val := split[0], split[1:]
 	return key, strings.Join(val, ""), nil
@@ -66,8 +66,8 @@ func (c *ConfigMap) Set(field string, val string) error {
 
 type Config struct {
 	sync.RWMutex
-	cmpx map[string]*ConfigMap
-	drct map[string]string
+	nested map[string]*ConfigMap
+	direct map[string]string
 }
 
 type ConfEntry struct {
@@ -78,18 +78,18 @@ type ConfEntry struct {
 
 func NewConfig() *Config {
 	return &Config{
-		cmpx: make(map[string]*ConfigMap),
-		drct: make(map[string]string),
+		nested: make(map[string]*ConfigMap),
+		direct: make(map[string]string),
 	}
 }
 
 func (c *Config) Get(field string) (interface{}, bool) {
 	c.RLock()
 	defer c.RUnlock()
-	if val, ok := c.cmpx[strings.ToLower(field)]; ok { // {
+	if val, ok := c.nested[strings.ToLower(field)]; ok { // {
 		return val, true
 	}
-	if val, ok := c.drct[strings.ToLower(field)]; ok {
+	if val, ok := c.direct[strings.ToLower(field)]; ok {
 		return val, true
 	}
 	return nil, false
@@ -105,13 +105,13 @@ func (c *Config) Set(field string, value interface{}) error {
 	defer c.Unlock()
 	switch valT := value.(type) {
 	case int:
-		c.drct[strings.ToLower(field)] = fmt.Sprintf("%d", valT)
+		c.direct[strings.ToLower(field)] = fmt.Sprintf("%d", valT)
 	case bool:
-		c.drct[strings.ToLower(field)] = fmt.Sprintf("%t", valT)
+		c.direct[strings.ToLower(field)] = fmt.Sprintf("%t", valT)
 	case string:
-		c.drct[strings.ToLower(field)] = valT
+		c.direct[strings.ToLower(field)] = valT
 	case *ConfigMap:
-		c.cmpx[strings.ToLower(field)] = valT
+		c.nested[strings.ToLower(field)] = valT
 	default:
 		return fmt.Errorf("Config field type not supported: %s", field)
 	}
@@ -134,18 +134,18 @@ func (c *Config) SetField(section string, field string, value string) error {
 	section = strings.ToLower(section)
 	c.Lock()
 	defer c.Unlock()
-	if c.drct[section] != "" {
+	if c.direct[section] != "" {
 		logger.Printf("Config field already set directly: %s", section)
-		return ErrConfNotEmpy
+		return ErrConfNotEmpty
 	}
-	if c.cmpx[section] == nil {
+	if c.nested[section] == nil {
 		// logger.Printf("Creating new config map: %s", section)
-		c.cmpx[section] = NewConfigMap()
+		c.nested[section] = NewConfigMap()
 	}
 	if os.Getenv("ENVIRONMENT") == "development" {
 		logger.Printf("Setting config field: %s->%s = %s", section, field, value)
 	}
-	return c.cmpx[section].Set(field, value)
+	return c.nested[section].Set(field, value)
 }
 
 func (c *Config) SetEntry(entry *ConfEntry) error {
@@ -159,10 +159,10 @@ func (c *Config) Sprint() string {
 	c.RLock()
 	defer c.RUnlock()
 	var buffer strings.Builder
-	for k, v := range c.drct {
+	for k, v := range c.direct {
 		buffer.WriteString(fmt.Sprintf("\t%s:\t%s\n", k, v))
 	}
-	for k, v := range c.cmpx {
+	for k, v := range c.nested {
 		buffer.WriteString(fmt.Sprintf("\t%s:\n", k))
 		for k2, v2 := range v.conf {
 			buffer.WriteString(fmt.Sprintf("\t\t%s:\t%s\n", k2, v2))
