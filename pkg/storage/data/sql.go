@@ -244,7 +244,7 @@ func read(file *os.File, parser func(data []byte, v any) error) (string, error) 
 
 // DBFunction
 func (db *DataBase) CreateTable(ctx context.Context, table string, fields []DBField) error {
-	logger.Println("creating table: ", table)
+	logger.Println("creating table:", table)
 	_, err := db.transactionWrapper(ctx, CREATE, table, fields)
 	if err != nil {
 		logger.Println(err)
@@ -254,7 +254,7 @@ func (db *DataBase) CreateTable(ctx context.Context, table string, fields []DBFi
 }
 
 func (db *DataBase) DeleteTable(ctx context.Context, table string) error {
-	logger.Println("deleting table: ", table)
+	logger.Println("deleting table:", table)
 
 	// selecting to check if table is empty
 	row, err := db.Select(ctx, table, nil, nil, "LIMIT 1")
@@ -275,21 +275,22 @@ func (db *DataBase) DeleteTable(ctx context.Context, table string) error {
 }
 
 func (db *DataBase) Select(ctx context.Context, table string, fields []FieldName, wm *WhereMap, args string) (DBResult, error) {
-	logger.Println("selecting from table: ", table)
+	logger.Println("selecting from table:", table)
 	result, err := db.transactionWrapper(ctx, SELECT, table, fields, wm, args)
 	if err != nil {
 		logger.Println(err)
 		return nil, ErrDBSelect
 	}
 	// logger.Printf("got data: %+v\n", result)
+	logger.Println("selected successfully")
 	return result, nil
 }
 
 func (db *DataBase) Insert(ctx context.Context, table string, fields []FieldName, values [][]interface{}) error {
-	logger.Println("inserting into table: ", table)
+	logger.Println("inserting into table:", table)
 	for _, v := range values {
 		if len(v) != len(fields) {
-			logger.Println("warning: number of values does not match number of fields: ", values[0])
+			logger.Println("warning: number of values does not match number of fields:", len(v), "/", len(fields))
 		}
 	}
 	_, err := db.transactionWrapper(ctx, INSERT, table, fields, values)
@@ -297,11 +298,12 @@ func (db *DataBase) Insert(ctx context.Context, table string, fields []FieldName
 		logger.Println(err)
 		return ErrDBInsert
 	}
+	logger.Println("inserted successfully")
 	return nil
 }
 
 func (db *DataBase) Update(ctx context.Context, table string, updates map[FieldName]DBValue, wm *WhereMap) error {
-	logger.Println("updating table: ", table)
+	logger.Println("updating table:", table)
 	_, err := db.transactionWrapper(ctx, UPDATE, table, updates, wm)
 	if err != nil {
 		logger.Println(err)
@@ -312,7 +314,7 @@ func (db *DataBase) Update(ctx context.Context, table string, updates map[FieldN
 }
 
 func (db *DataBase) Delete(ctx context.Context, table string, wm *WhereMap) error {
-	logger.Println("deleting from table: ", table)
+	logger.Println("deleting from table:", table)
 	_, err := db.transactionWrapper(ctx, DELETE, table, wm)
 	if err != nil {
 		logger.Println(err)
