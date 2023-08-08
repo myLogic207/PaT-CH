@@ -1,6 +1,7 @@
 package util
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"log"
@@ -250,6 +251,20 @@ func parseEnvVar(envVar string, prefixLen int) *ConfEntry {
 		return nil
 	}
 	key := string(rawKey[(prefixLen + 1):])
+	key = strings.ToUpper(key)
+
+	if strings.HasSuffix(key, "_FILE") {
+		logger.Println("Loading config from file: " + value)
+		if file, err := os.Open(value); err == nil {
+			defer file.Close()
+			value = readEnvFromFile(file)
+			key = key[:len(key)-5]
+		} else {
+			logger.Println(err)
+			return nil
+		}
+	}
+
 	if strings.Contains(key, "_") {
 		parent, field, err := twoSplit(key, "_")
 		if err != nil {
@@ -266,4 +281,13 @@ func parseEnvVar(envVar string, prefixLen int) *ConfEntry {
 		parent: key,
 		value:  value,
 	}
+}
+
+func readEnvFromFile(file *os.File) string {
+	var buffer strings.Builder
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		buffer.WriteString(scanner.Text())
+	}
+	return strings.Trim(buffer.String(), "\r\n")
 }

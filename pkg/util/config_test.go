@@ -32,3 +32,30 @@ func TestConfigLoad(t *testing.T) {
 		}
 	}
 }
+
+func TestConfigWithFile(t *testing.T) {
+	testvalue := "abcdefg1234567!"
+	t.Log("Testing Config Load with File")
+	if err := os.WriteFile("test_conf.env", []byte(testvalue), 0644); err != nil {
+		t.Error("Failed to create test file")
+		t.FailNow()
+	}
+	os.Setenv("PATCHTEST_SIMPLE_FILE", "test_conf.env")
+	// os.Setenv("PATCHTEST_MAP_FILE", "abcde")
+	config := LoadConfig("PATCHTEST")
+	if config == nil {
+		t.Error("Config is nil")
+	}
+	t.Logf("Config:\n%v", config.Sprint())
+	if val, ok := config.Get("SiMPLe"); ok {
+		if val.(string) != testvalue {
+			t.Error("Config is not loaded correctly (level 1)")
+		}
+	} else {
+		t.Error("Config is not loaded correctly (level 0)")
+	}
+
+	if err := os.Remove("test_conf.env"); err != nil {
+		t.Error("Failed to remove test file")
+	}
+}
