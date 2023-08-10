@@ -10,6 +10,8 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/gin-contrib/sessions"
@@ -25,6 +27,7 @@ const (
 
 var (
 	ErrConnectionRefused = errors.New("connection refused")
+	ErrRedisConf         = errors.New("could not parse redis config")
 	ErrStartServer       = errors.New("could not start server")
 	ErrStopServer        = errors.New("could not stop server")
 	ErrInitServer        = errors.New("could not initialize server")
@@ -35,7 +38,8 @@ var (
 type keyServerAddr string
 
 type Server struct {
-	config     *ApiConfig
+	config     *util.Config
+	cert       *Certificate
 	router     *gin.Engine
 	server     *http.Server
 	ctx        context.Context
@@ -44,48 +48,48 @@ type Server struct {
 	running    bool
 }
 
-func NewServer(ctx context.Context, logger *log.Logger, db UserTable, config *util.ConfigMap, rc *util.ConfigMap) (*Server, error) {
-	conf, err := ParseConf(config, rc)
-	if err != nil {
-		logger.Println(err)
-	}
-	return NewServerWithConf(ctx, logger, db, conf)
+var defaultConfig = map[string]interface{}{
+	"host": "localhost",
+	"port": 80,
+	"redis": map[string]interface{}{
+		"use": false,
+	},
+	"initFile": "api.init.d",
 }
 
-func NewServerWithConf(ctx context.Context, logger *log.Logger, db UserTable, config *ApiConfig) (*Server, error) {
+func NewServer(ctx context.Context, logger *log.Logger, db UserTable, config *util.Config) (*Server, error) {
 	var cache sessions.Store
-	secret_store := []byte("secret")
-	if config.Redis {
+	if logger == nil {
+		logger = log.Default()
+	}
+	config.MergeDefault(defaultConfig)
+	if use_redis, ok := config.GetBool("redis.use"); ok && use_redis {
 		logger.Println("Using Redis Cache")
-		conn, err := redis.NewStoreWithDB(10, "tcp", config.RedisConf.Addr(), config.RedisConf.Password, fmt.Sprint(config.RedisConf.DB), secret_store)
-		if err != nil {
-			logger.Println(err)
-			return nil, ErrConnectionRefused
+		var redisConfig *util.Config
+		if rawRedisConfig, ok := config.Get("redis"); ok {
+			if redisConfig, ok = rawRedisConfig.(*util.Config); !ok {
+				return nil, ErrInitServer
+			}
 		}
-		cache = conn
-	} else {
+		var err error
+		if cache, err = connectRedisCache(redisConfig); err != nil {
+			return nil, ErrInitServer
+		}
+	}
+
+	if cache == nil {
 		logger.Println("No cache provided, using cookie fallback")
-		cache = cookie.NewStore(secret_store)
+		cache = cookie.NewStore([]byte("secret"))
 	}
-	return NewServerWithCacheConf(ctx, logger, db, config, cache)
-}
 
-func NewServerWithCache(ctx context.Context, logger *log.Logger, db UserTable, conf *util.ConfigMap, cache sessions.Store) (*Server, error) {
-	config, err := ParseConf(conf, nil)
-	if err != nil {
-		logger.Println(err)
+	serverAddress := loadAddress(config)
+	if serverAddress == "" {
+		return nil, ErrInitServer
 	}
-	return NewServerWithCacheConf(ctx, logger, db, config, cache)
-}
-
-// Actual server creation
-func NewServerWithCacheConf(ctx context.Context, logger *log.Logger, db UserTable, config *ApiConfig, cache sessions.Store) (*Server, error) {
-	config.init()
 	sessionCtl := NewSessionControl(db, logger)
 	router := NewRouter(sessionCtl, logger, cache)
-
-	server := &http.Server{
-		Addr:    config.Addr(),
+	httpServer := &http.Server{
+		Addr:    serverAddress,
 		Handler: router,
 		BaseContext: func(listener net.Listener) context.Context {
 			return context.WithValue(ctx, serverAddrKey, listener.Addr().String())
@@ -95,50 +99,115 @@ func NewServerWithCacheConf(ctx context.Context, logger *log.Logger, db UserTabl
 	return &Server{
 		config:     config,
 		router:     router,
-		server:     server,
+		server:     httpServer,
 		ctx:        ctx,
 		sessionCtl: sessionCtl,
 		running:    false,
 		logger:     logger,
+		cert:       loadCert(config),
 	}, nil
 }
 
+func loadAddress(config *util.Config) string {
+	serverAddress, ok := config.GetString("host")
+	if !ok {
+		return ""
+	}
+	var port int
+	if serverPort, ok := config.GetString("port"); ok {
+		if serverPort, err := strconv.Atoi(serverPort); err == nil {
+			port = serverPort
+		} else {
+			return ""
+		}
+	} else {
+		return ""
+	}
+	return fmt.Sprintf("%s:%d", serverAddress, port)
+}
+
+func loadCert(config *util.Config) *Certificate {
+	cert := &Certificate{}
+	if certPath, ok := config.GetString("cert"); ok {
+		if keyPath, ok := config.GetString("key"); ok {
+			cert.Cert = certPath
+			cert.Key = keyPath
+			return cert
+		}
+	}
+	return nil
+}
+
+func connectRedisCache(redisConfig *util.Config) (redis.Store, error) {
+	redisHost, ok := redisConfig.GetString("host")
+	if !ok {
+		return nil, ErrRedisConf
+	}
+	var port uint16
+	if redisPort, ok := redisConfig.Get("port"); ok {
+		if redisPort, ok := redisPort.(uint16); ok {
+			port = redisPort
+		} else {
+			return nil, ErrRedisConf
+		}
+	} else {
+		return nil, ErrRedisConf
+	}
+	redisAddr := fmt.Sprintf("%s:%d", redisHost, port)
+	redisPassword, ok := redisConfig.GetString("password")
+	if !ok {
+		return nil, ErrRedisConf
+	}
+	redisDB, ok := redisConfig.GetString("db")
+	if !ok {
+		return nil, ErrRedisConf
+	}
+	conn, err := redis.NewStoreWithDB(10, "tcp", redisAddr, redisPassword, redisDB, []byte("secret"))
+	if err != nil {
+		return nil, ErrConnectionRefused
+	}
+	return conn, nil
+}
+
 func (s *Server) Init() error {
-	file, err := os.Open(s.config.InitFile)
+	initFile, ok := s.config.GetString("InitFile")
+	if !ok {
+		s.logger.Println("No init file provided")
+		return nil
+	}
+
+	if fileStat, err := os.Stat(initFile); err != nil {
+		s.logger.Println("Init file does not exist")
+		return nil
+	} else {
+		if fileStat.IsDir() {
+			return s.loadInitDir(initFile, s.sessionCtl)
+		}
+		return s.loadInitFile(initFile, s.sessionCtl)
+	}
+}
+
+func (s *Server) loadInitDir(folderPath string, sessionCtl *SessionControl) error {
+	files, err := os.ReadDir(folderPath)
 	if err != nil {
 		s.logger.Println(err)
 		return ErrOpenInitFile
 	}
-	defer file.Close()
-	// if folder, if file, if not exist, create
-	var info os.FileInfo
-	if info, err = file.Stat(); err != nil {
-		s.logger.Println("Init file is a directory")
-		return ErrOpenInitFile
-	}
-	if info.IsDir() {
-		files, err := os.ReadDir(s.config.InitFile)
+	for _, f := range files {
+		if f.IsDir() {
+			continue
+		}
+		info, err := f.Info()
 		if err != nil {
 			s.logger.Println(err)
-			return ErrOpenInitFile
+			continue
 		}
-		for _, f := range files {
-			if f.IsDir() {
-				continue
-			}
-			info, err := f.Info()
-			if err != nil {
-				s.logger.Println(err)
-				continue
-			}
-			if err := s.loadInitFile(fmt.Sprint(s.config.InitFile, string(os.PathSeparator), info.Name()), s.sessionCtl); err != nil {
-				s.logger.Println(err)
-				return ErrInitServer
-			}
+		if err := s.loadInitFile(filepath.Join(folderPath, info.Name()), s.sessionCtl); err != nil {
+			s.logger.Println(err)
+			return ErrInitServer
 		}
-		return nil
 	}
-	return s.loadInitFile(s.config.InitFile, s.sessionCtl)
+	return nil
 }
 
 func (s *Server) loadInitFile(path string, sessionCtl *SessionControl) error {
@@ -162,23 +231,23 @@ func (s *Server) loadInitFile(path string, sessionCtl *SessionControl) error {
 func (s *Server) Start() error {
 	s.logger.Println("Starting server")
 	s.running = true
-	if s.config.cert == nil {
+	if s.cert == nil {
 		go func() {
 			if err := s.server.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 				s.logger.Fatalln(err)
 			}
 		}()
 	} else {
-		if !s.config.cert.Validate() {
+		if !s.cert.Validate() {
 			return ErrStartServer
 		}
 		go func() {
-			if err := s.server.ListenAndServeTLS(s.config.cert.Cert, s.config.cert.Key); !errors.Is(err, http.ErrServerClosed) {
+			if err := s.server.ListenAndServeTLS(s.cert.Cert, s.cert.Key); !errors.Is(err, http.ErrServerClosed) {
 				s.logger.Fatalln(err)
 			}
 		}()
 	}
-	s.logger.Println("Serving https on " + s.Addr("/"))
+	s.logger.Println("Serving on " + s.Addr("/"))
 	return nil
 }
 
@@ -198,10 +267,12 @@ func (s *Server) Stop() error {
 
 func (s *Server) Addr(route string) string {
 	pre := "http://"
-	if s.config.cert != nil {
+	if s.cert != nil {
 		pre = "https://"
 	}
-	return pre + s.config.Addr() + route
+	host, _ := s.config.GetString("host")
+	port, _ := s.config.GetString("port")
+	return fmt.Sprintf("%s%s:%s", pre, host, port)
 }
 
 func (s *Server) SetRoute(method, path string, handler gin.HandlerFunc) {

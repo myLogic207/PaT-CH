@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/myLogic207/PaT-CH/pkg/util"
 )
 
 func randomOffset() uint16 {
@@ -25,11 +26,14 @@ func startTestServer() *Server {
 	log.Println("Starting Test Server")
 	ctx := context.Background()
 	gin.SetMode(gin.ReleaseMode)
-	s, err := NewServerWithConf(ctx, log.Default(), NewUserIMDB(), &ApiConfig{
-		Host:  "127.0.0.1",
-		Port:  3080 + randomOffset(),
-		Redis: false,
-	})
+	apiConfig := util.NewConfig(map[string]interface{}{
+		"host": "localhost",
+		"port": 3080 + randomOffset(),
+		"redis": map[string]interface{}{
+			"use": false,
+		},
+	}, nil)
+	s, err := NewServer(ctx, log.Default(), NewUserIMDB(), apiConfig)
 	if err != nil {
 		panic(err)
 	}

@@ -1,13 +1,13 @@
 package data
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -65,36 +65,39 @@ type (
 type DataBase struct {
 	pool    *pgxpool.Pool
 	context context.Context
-	config  *DataConfig
+	config  *util.Config
 	cache   *cache.RedisConnector
 	Users   *UserDB
 	logger  *log.Logger
 }
 
-func NewConnector(ctx context.Context, logger *log.Logger, config *util.ConfigMap, rc *util.ConfigMap) (*DataBase, error) {
-	if logger == nil {
-		logger = log.Default()
-	}
-	conf, err := parseConfig(config, rc)
-	if err != nil {
-		return nil, err
-	}
-	return NewConnectorWithConf(ctx, conf, logger)
+var defaultConfig = map[string]interface{}{
+	"Host":     "localhost",
+	"Port":     "5432",
+	"user":     "postgres",
+	"password": "postgres",
+	"DBname":   "postgres",
+	"sslmode":  "disable",
+	"MaxConns": "10",
+	"UseCache": false,
+	"initFile": "db.init.d",
 }
 
-func NewConnectorWithConf(ctx context.Context, config *DataConfig, logger *log.Logger) (*DataBase, error) {
+func NewConnector(ctx context.Context, logger *log.Logger, config *util.Config) (*DataBase, error) {
 	if logger == nil {
 		logger = log.Default()
 	}
-	if err := config.init(); err != nil {
-		return nil, err
+	config.MergeDefault(defaultConfig)
+	connString := buildConnString(config)
+	if connString == "" {
+		return nil, ErrParseConfig
 	}
-	poolConfig, err := pgxpool.ParseConfig(config.ConnString())
+	pgxConfig, err := pgxpool.ParseConfig(connString)
 	if err != nil {
 		logger.Println(err)
 		return nil, ErrParseConfig
 	}
-	db, err := pgxpool.NewWithConfig(ctx, poolConfig)
+	db, err := pgxpool.NewWithConfig(ctx, pgxConfig)
 	if err != nil {
 		logger.Println(err)
 		return nil, ErrConnect
@@ -111,14 +114,11 @@ func NewConnectorWithConf(ctx context.Context, config *DataConfig, logger *log.L
 		logger:  logger,
 	}
 	dbConn.Users = NewUserDB(dbConn, "users", logger)
-	if config.UseCache {
-		cache, err := cache.NewConnectorWithConf(config.RedisConf, logger)
-		if err != nil {
-			logger.Println(err)
-			return nil, ErrConnectRedis
+
+	if useCache, ok := config.GetBool("UseCache"); ok && useCache {
+		if err := dbConn.SetCache(config); err != nil {
+			return nil, err
 		}
-		logger.Println("connected to redis")
-		dbConn.cache = cache
 	} else {
 		dbConn.cache = cache.NewStubConnector()
 	}
@@ -126,8 +126,66 @@ func NewConnectorWithConf(ctx context.Context, config *DataConfig, logger *log.L
 	return dbConn, nil
 }
 
-func (db *DataBase) SetCache(cache *cache.RedisConnector) {
+func buildConnString(config *util.Config) string {
+	stringBuffer := strings.Builder{}
+	stringBuffer.WriteString("postgres://")
+
+	if user, ok := config.GetString("User"); ok {
+		stringBuffer.WriteString(user + ":")
+	} else {
+		return ""
+	}
+
+	if password, ok := config.GetString("Password"); ok {
+		stringBuffer.WriteString(password + "@")
+	} else {
+		return ""
+	}
+
+	if host, ok := config.GetString("Host"); ok {
+		stringBuffer.WriteString(host + ":")
+	} else {
+		return ""
+	}
+
+	if port, ok := config.GetString("Port"); ok {
+		stringBuffer.WriteString(port + "/")
+	} else {
+		return ""
+	}
+
+	if dbName, ok := config.GetString("DBname"); ok {
+		stringBuffer.WriteString(dbName + "?")
+	} else {
+		return ""
+	}
+
+	if sslMode, ok := config.GetString("sslmode"); ok {
+		stringBuffer.WriteString("sslmode=" + sslMode + "&")
+	}
+
+	if poolMaxConns, ok := config.GetString("MaxConns"); ok {
+		stringBuffer.WriteString("pool_max_conns=" + poolMaxConns)
+	}
+
+	return stringBuffer.String()
+}
+
+func (db *DataBase) SetCache(config *util.Config) error {
+	var redisConf *util.Config
+	if rawRedisConf, ok := config.Get("redis"); ok {
+		if redisConf, ok = rawRedisConf.(*util.Config); !ok {
+			return ErrParseConfig
+		}
+	}
+	cache, err := cache.NewConnector(redisConf, db.logger)
+	if err != nil {
+		db.logger.Println(err)
+		return ErrConnectRedis
+	}
+	db.logger.Println("connected to redis")
 	db.cache = cache
+	return nil
 }
 
 func (db *DataBase) Disconnect() error {
@@ -137,46 +195,48 @@ func (db *DataBase) Disconnect() error {
 
 func (db *DataBase) Init() error {
 	db.logger.Println("initializing database")
-	file, err := os.Open(db.config.InitFile)
-	if err != nil {
-		db.logger.Println(err)
-		return ErrOpenInitFile
-	}
-	defer file.Close()
-	info, err := file.Stat()
-	if err != nil {
-		db.logger.Println(err)
-		return ErrOpenInitFile
-	}
-	if info.IsDir() {
-		files, err := file.ReadDir(-1)
-		if err != nil {
-			db.logger.Println(err)
-			return ErrReadFile
-		}
-		for _, dirEntry := range files {
-			if dirEntry.IsDir() {
-				continue
-			}
-			fileEntry, err := os.Open(fmt.Sprint(info.Name(), string(os.PathSeparator), dirEntry.Name()))
-			if err != nil {
-				db.logger.Println(err)
-				return ErrReadFile
-			}
-			if err := db.loadInitFile(fileEntry); err != nil {
-				return err
-			}
-		}
-	} else {
-		if err := db.loadInitFile(file); err != nil {
-			return err
-		}
+	initFile, ok := db.config.GetString("initFile")
+	if !ok {
+		db.logger.Println("No init file provided")
+		return nil
 	}
 
+	if fileStat, err := os.Stat(initFile); err != nil {
+		db.logger.Println("Init file does not exist")
+		return nil
+	} else {
+		if fileStat.IsDir() {
+			db.logger.Println("Init file is a directory")
+			return db.loadInitDir(initFile)
+		}
+		return db.loadInitFile(initFile)
+	}
+}
+
+func (db *DataBase) loadInitDir(folderPath string) error {
+	files, err := os.ReadDir(folderPath)
+	if err != nil {
+		db.logger.Println(err)
+		return ErrOpenInitFile
+	}
+	for _, f := range files {
+		if f.IsDir() {
+			continue
+		}
+		info, err := f.Info()
+		if err != nil {
+			db.logger.Println(err)
+			continue
+		}
+		if err := db.loadInitFile(filepath.Join(folderPath, info.Name())); err != nil {
+			db.logger.Println(err)
+			return ErrInitDB
+		}
+	}
 	return nil
 }
 
-func (db *DataBase) loadInitFile(file *os.File) error {
+func (db *DataBase) loadInitFile(file string) error {
 	query, err := parseFile(file)
 	if err != nil {
 		db.logger.Println(err)
@@ -187,6 +247,7 @@ func (db *DataBase) loadInitFile(file *os.File) error {
 
 	}
 	for _, q := range strings.Split(query, "\\") {
+		db.logger.Println("Executing init query")
 		if _, err = db.pool.Exec(db.context, q); err != nil {
 			db.logger.Println(err)
 			return ErrInitDB
@@ -195,29 +256,24 @@ func (db *DataBase) loadInitFile(file *os.File) error {
 	return nil
 }
 
-func readSQL(file *os.File) string {
-	var query string
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		query += scanner.Text()
-	}
-	return query
-}
-
-func parseFile(file *os.File) (string, error) {
-	split := strings.Split(file.Name(), ".")
+func parseFile(fileName string) (string, error) {
+	split := strings.Split(fileName, ".")
 	suffix := split[len(split)-1]
 	var query, val string
 	var err error
 	switch suffix {
 	case "sql":
-		query = readSQL(file)
+		if rawQuery, err := os.ReadFile(fileName); err != nil {
+			return "", err
+		} else {
+			query = string(rawQuery)
+		}
 	case "json":
-		if val, err = read(file, json.Unmarshal); err == nil {
+		if val, err = read(fileName, json.Unmarshal); err == nil {
 			query = val
 		}
 	case "yaml":
-		if val, err = read(file, yaml.Unmarshal); err == nil {
+		if val, err = read(fileName, yaml.Unmarshal); err == nil {
 			query = val
 		}
 	default:
@@ -229,8 +285,8 @@ func parseFile(file *os.File) (string, error) {
 	return query, nil
 }
 
-func read(file *os.File, parser func(data []byte, v any) error) (string, error) {
-	raw, err := os.ReadFile(file.Name())
+func read(fileName string, parser func(data []byte, v any) error) (string, error) {
+	raw, err := os.ReadFile(fileName)
 	if err != nil {
 		return "", err
 	}

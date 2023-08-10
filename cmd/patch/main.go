@@ -35,11 +35,11 @@ func main() {
 	if err != nil {
 		logger.Fatalln("error while preparing logger: ", err)
 	}
-	config := util.LoadConfigWithLogger(prefix, configLogger)
+	config := util.LoadConfig(prefix, configLogger)
 	if config == nil {
 		logger.Fatalln("error while loading config")
 	}
-	configMaps, err := util.LoadConfigMaps(config, SYSTEM_LIST)
+	configMaps, err := config.LoadConfigs(SYSTEM_LIST)
 	if err != nil {
 		logger.Fatalln("error while loading config maps: ", err)
 	}
@@ -50,7 +50,15 @@ func main() {
 	if err != nil {
 		logger.Fatalln("error while preparing logger: ", err)
 	}
-	database, err := data.NewConnector(mainContext, dbLogger, configMaps["db"], configMaps["redis"])
+	dbConfig, ok := configMaps["db"]
+	if !ok {
+		logger.Fatalln("error while loading db config")
+	}
+	redisConfig, ok := configMaps["redis"]
+	if ok {
+		dbConfig.Set("redis", redisConfig)
+	}
+	database, err := data.NewConnector(mainContext, dbLogger, dbConfig)
 	if err != nil {
 		logger.Fatalln("error while creating database connector: ", err)
 	}
@@ -60,7 +68,17 @@ func main() {
 	if err != nil {
 		logger.Fatalln("error while preparing logger: ", err)
 	}
-	server, err := api.NewServer(mainContext, apiLogger, database.Users, configMaps["api"], configMaps["redis"])
+	apiConfig, ok := configMaps["api"]
+	if !ok {
+		logger.Fatalln("error while loading api config")
+	}
+	if apiUseRedis, ok := apiConfig.GetBool("redis.use"); ok && apiUseRedis {
+		apiConfig.Set("redis", redisConfig)
+		apiConfig.Set("redis.use", true)
+	} else {
+		apiConfig.Set("redis.use", false)
+	}
+	server, err := api.NewServer(mainContext, apiLogger, database.Users, apiConfig)
 	if err != nil {
 		logger.Fatalln("error while creating server: ", err)
 	}

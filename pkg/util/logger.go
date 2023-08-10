@@ -9,7 +9,7 @@ import (
 )
 
 func CreateLogger(system_name string) (*log.Logger, error) {
-	log.Println("preparing logger for (sub)system: ", system_name)
+	log.Println("preparing logger for (sub)system:", system_name)
 
 	writer_list := []io.Writer{}
 

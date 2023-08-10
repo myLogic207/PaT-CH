@@ -5,13 +5,26 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/myLogic207/PaT-CH/pkg/util"
 	"github.com/redis/go-redis/v9"
 )
 
+var redis_default_config = map[string]interface{}{
+	"host":        "localhost",
+	"port":        6379,
+	"password":    "",
+	"db":          0,
+	"IdleTimeout": 0,
+	"IdleConn":    10,
+	"Pool":        10,
+	"TimeoutSec":  60,
+}
+
 type RedisConnector struct {
 	active bool
+	config *util.Config
 	store  *redis.Client
 	logger *log.Logger
 }
@@ -24,26 +37,47 @@ func NewStubConnector() *RedisConnector {
 	}
 }
 
-func NewConnector(config *util.ConfigMap, logger *log.Logger) (*RedisConnector, error) {
+func NewConnector(config *util.Config, logger *log.Logger) (*RedisConnector, error) {
 	if logger == nil {
 		logger = log.Default()
 	}
-	redisConfig, err := ParseConf(config)
-	if err != nil {
-		logger.Println("could not parse redis config, using default(s)")
-	}
-	return NewConnectorWithConf(redisConfig, logger)
-}
 
-func NewConnectorWithConf(config *RedisConfig, logger *log.Logger) (*RedisConnector, error) {
-	if logger == nil {
-		logger = log.Default()
+	if err := config.MergeDefault(redis_default_config); err != nil {
+		logger.Println("could not parse redis config, using default(s)")
+		config = util.NewConfig(redis_default_config, nil)
 	}
-	connection := redis.NewClient(&redis.Options{
-		Addr:     config.Addr(),
-		Password: config.Password,
-		DB:       config.DB,
-	})
+	redisOptions := &redis.Options{}
+	host, _ := config.Get("host")
+	port, _ := config.Get("port")
+	redisOptions.Addr = fmt.Sprintf("%s:%s", host, port)
+	password, _ := config.GetString("password")
+	redisOptions.Password = password
+	db, _ := config.Get("db")
+	if db, ok := db.(int); ok {
+		redisOptions.DB = db
+	} else {
+		redisOptions.DB = 0
+	}
+	idleConn, _ := config.Get("idle.Conn")
+	if idleConn, ok := idleConn.(int); ok {
+		redisOptions.MaxIdleConns = idleConn
+	} else {
+		redisOptions.MaxIdleConns = 10
+	}
+	idleTimeout, _ := config.Get("Idle.Timeout")
+	if idleTimeout, ok := idleTimeout.(int); ok {
+		redisOptions.ConnMaxIdleTime = time.Duration(idleTimeout) * time.Second
+	} else {
+		redisOptions.ConnMaxIdleTime = 0
+	}
+	maxActive, _ := config.Get("pool")
+	if maxActive, ok := maxActive.(int); ok {
+		redisOptions.PoolSize = maxActive
+	} else {
+		redisOptions.PoolSize = 10
+	}
+
+	connection := redis.NewClient(redisOptions)
 	status := connection.Ping(context.Background())
 	if status.Err() != nil {
 		logger.Println(status.Err())
@@ -51,6 +85,7 @@ func NewConnectorWithConf(config *RedisConfig, logger *log.Logger) (*RedisConnec
 	}
 	logger.Println(status.String())
 	return &RedisConnector{
+		config: config,
 		store:  connection,
 		active: true,
 	}, nil

@@ -11,177 +11,196 @@ import (
 	"time"
 )
 
+const SUB_SEPARATOR = "."
+
 var (
-	ErrNotSplitAble = errors.New("cannot split into minimum (2) parts")
-	ErrConfNotEmpty = errors.New("config field not empty")
-	ErrFieldNil     = errors.New("supplied field cannot be nil")
+	ErrNoConfigFile   = errors.New("no config file found")
+	ErrKeyNil         = errors.New("key cannot be nil")
+	ErrFieldNil       = errors.New("field cannot be nil")
+	ErrNotSplitAble   = errors.New("string not split able, might not contain split character")
+	ErrFieldNotConfig = errors.New("config field is not a config map")
 )
 
-func twoSplit(variable string, splitter string) (string, string, error) {
-	split := strings.Split(variable, splitter)
-	if len(split) < 2 {
-		return "", "", ErrNotSplitAble
-	}
-	key, val := split[0], split[1:]
-	return key, strings.Join(val, ""), nil
-}
-
-type Configurable interface {
-	map[string]string
-	Get(field string) (string, error)
-	Set(field string, val string) error
-}
-
-type ConfigMap struct {
-	sync.RWMutex
-	conf map[string]string
-}
-
-func NewConfigMap() *ConfigMap {
-	return &ConfigMap{
-		conf: make(map[string]string),
-	}
-}
-
-func (c *ConfigMap) Get(field string) (string, bool) {
-	c.RLock()
-	defer c.RUnlock()
-	if val := c.conf[strings.ToLower(field)]; val != "" {
-		return val, true
-	}
-	return "", false
-}
-
-func (c *ConfigMap) Set(field string, val string) error {
-	c.Lock()
-	defer c.Unlock()
-	field = strings.ToLower(field)
-	// if c[field] != "" {
-	// 	return fmt.Errorf("Config field not empty: %s", field)
-	// }
-	c.conf[field] = val
-	return nil
+type configEntry struct {
+	key   []string
+	value interface{}
 }
 
 type Config struct {
-	logger *log.Logger
 	sync.RWMutex
-	nested map[string]*ConfigMap
-	direct map[string]string
+	logger *log.Logger
+	// nested map[string]*Config
+	store map[string]interface{}
 }
 
-type ConfEntry struct {
-	parent string
-	field  string
-	value  string
-}
-
-func NewConfig(logger *log.Logger) *Config {
+func NewConfig(initValues map[string]interface{}, logger *log.Logger) *Config {
 	if logger == nil {
 		logger = log.Default()
 	}
-	return &Config{
+
+	conf := &Config{
 		logger: logger,
-		nested: make(map[string]*ConfigMap),
-		direct: make(map[string]string),
+		// nested: make(map[string]*Config),
+		store: make(map[string]interface{}),
+	}
+
+	if err := conf.MergeDefault(initValues); err != nil {
+		panic(err)
+	}
+
+	return conf
+}
+
+func LoadConfig(prefix string, logger *log.Logger) *Config {
+	if logger == nil {
+		logger = log.Default()
+	}
+	logger.Println("Loading config from environment variables (prefix: " + prefix + ")")
+	finishChannel := make(chan bool, 1)
+	config := NewConfig(nil, logger)
+	go config.loadVarsFromEnv(prefix, finishChannel)
+	logger.Println("Waiting for config to load...")
+	select {
+	case <-finishChannel:
+		logger.Println("Config loaded")
+		return config
+	case <-time.After(10 * time.Second):
+		logger.Fatalln("Config load timeout - partial config supplied")
+		return nil
 	}
 }
 
-func (c *Config) Get(field string) (interface{}, bool) {
-	c.RLock()
-	defer c.RUnlock()
-	if val, ok := c.nested[strings.ToLower(field)]; ok { // {
-		return val, true
-	}
-	if val, ok := c.direct[strings.ToLower(field)]; ok {
-		return val, true
-	}
-	return nil, false
-}
-
-func (c *Config) Set(field string, value interface{}) error {
-	if value == nil {
-		c.logger.Println("Config field cannot be nil: ", field)
-		return ErrFieldNil
-	}
-	field = strings.ToLower(field)
-	c.Lock()
-	defer c.Unlock()
-	switch valT := value.(type) {
-	case int:
-		c.direct[strings.ToLower(field)] = fmt.Sprintf("%d", valT)
-	case bool:
-		c.direct[strings.ToLower(field)] = fmt.Sprintf("%t", valT)
-	case string:
-		c.direct[strings.ToLower(field)] = valT
-	case *ConfigMap:
-		c.nested[strings.ToLower(field)] = valT
-	default:
-		return fmt.Errorf("Config field type not supported: %s", field)
-	}
-	return nil
-}
-
-func (c *Config) GetField(parent string, field string) (string, bool) {
-	field = strings.ToLower(field)
-	if parentMap, ok := c.Get(parent); ok {
-		if parentMap, ok := parentMap.(*ConfigMap); ok {
-			if val, ok := parentMap.Get(field); ok {
-				return val, true
-			}
+func (c *Config) GetString(keyString string) (string, bool) {
+	if val, ok := c.Get(keyString); ok {
+		if str, ok := val.(string); ok {
+			return str, true
+		} else {
+			return fmt.Sprintf("%v", val), true
 		}
 	}
 	return "", false
 }
 
-func (c *Config) SetField(section string, field string, value string) error {
-	section = strings.ToLower(section)
-	c.Lock()
-	defer c.Unlock()
-	if c.direct[section] != "" {
-		c.logger.Printf("Config field already set directly: %s", section)
-		return ErrConfNotEmpty
-	}
-	if c.nested[section] == nil {
-		// c.logger.Printf("Creating new config map: %s", section)
-		c.nested[section] = NewConfigMap()
-	}
-	if os.Getenv("ENVIRONMENT") == "development" {
-		c.logger.Printf("Setting config field: %s->%s = %s", section, field, value)
-	}
-	return c.nested[section].Set(field, value)
-}
-
-func (c *Config) SetEntry(entry *ConfEntry) error {
-	if entry.field == "" {
-		return c.Set(entry.parent, entry.value)
-	}
-	return c.SetField(entry.parent, entry.field, entry.value)
-}
-
-func (c *Config) Sprint() string {
-	c.RLock()
-	defer c.RUnlock()
-	var buffer strings.Builder
-	for k, v := range c.direct {
-		buffer.WriteString(fmt.Sprintf("\t%s:\t%s\n", k, v))
-	}
-	for k, v := range c.nested {
-		buffer.WriteString(fmt.Sprintf("\t%s:\n", k))
-		for k2, v2 := range v.conf {
-			buffer.WriteString(fmt.Sprintf("\t\t%s:\t%s\n", k2, v2))
+func (c *Config) GetBool(keyString string) (bool, bool) {
+	if val, ok := c.Get(keyString); ok {
+		if b, ok := val.(bool); ok {
+			return b, true
 		}
 	}
-	return buffer.String()
+	return false, false
 }
 
-func (c *Config) Print() {
-	fmt.Printf("Config:\n%+v\n", c.Sprint())
+func (c *Config) Get(keyString string) (interface{}, bool) {
+	c.logger.Printf("Getting config field: %s", keyString)
+	key := strings.Split(keyString, SUB_SEPARATOR)
+	if len(key) == 0 {
+		c.logger.Println("Config field key cannot be nil")
+		return nil, false
+	}
+	return c.getRecursive(key)
 }
 
-// -----------------------------
+func (c *Config) getRecursive(key []string) (interface{}, bool) {
+	c.RLock()
+	defer c.RUnlock()
+	currentKey := strings.ToLower(key[0])
+	if len(key) == 1 {
+		if val, ok := c.store[currentKey]; ok {
+			return val, true
+		}
+		return nil, false
+	}
 
-func getVars(prefix string, wg *sync.WaitGroup) <-chan string {
+	if config, ok := c.store[currentKey].(*Config); ok {
+		return config.getRecursive(key[1:])
+	}
+
+	return nil, false
+}
+
+func (c *Config) Set(keyString string, value interface{}) error {
+	c.logger.Printf("Setting config field: %s", keyString)
+	key := strings.Split(keyString, SUB_SEPARATOR)
+
+	keyLength := len(key)
+	if keyLength == 0 {
+		c.logger.Println("Config field key cannot be nil")
+		return ErrKeyNil
+	}
+
+	if value == nil {
+		c.logger.Println("Config field value cannot be nil")
+		return ErrFieldNil
+	}
+
+	return c.setRecursive(key, value)
+}
+
+func (c *Config) setRecursive(key []string, value interface{}) error {
+	c.Lock()
+	currentKey := strings.ToLower(key[0])
+	if len(key) == 1 {
+		if c.store[currentKey] != nil {
+			c.logger.Printf("Overwriting config field: %s", currentKey)
+		}
+		c.store[currentKey] = value
+		c.Unlock()
+		return nil
+	}
+
+	if c.store[currentKey] == nil {
+		c.logger.Printf("Creating new config map: %s", currentKey)
+		c.store[currentKey] = NewConfig(nil, c.logger)
+	}
+	c.Unlock()
+
+	if config, ok := c.store[currentKey].(*Config); ok {
+		return config.setRecursive(key[1:], value)
+	} else {
+		c.logger.Printf("Config field %s is not a config map", currentKey)
+		return ErrFieldNotConfig
+	}
+}
+
+func (c *Config) MergeDefault(defaultConfig map[string]interface{}) error {
+	for rawKey, rawValue := range defaultConfig {
+		if _, ok := c.Get(rawKey); ok {
+			continue
+		}
+		if err := c.Set(rawKey, rawValue); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *Config) loadVarsFromEnv(prefix string, finishChannel chan bool) {
+	waitGroup := &sync.WaitGroup{}
+	defer close(finishChannel)
+
+	variableStream := getVarStream(prefix, waitGroup)
+	entries := parseVarStream(variableStream, waitGroup)
+	c.setEntries(entries, waitGroup)
+	waitGroup.Wait()
+}
+
+func (c *Config) LoadConfigs(configNames []string) (map[string]*Config, error) {
+	configList := make(map[string]*Config)
+	for _, configName := range configNames {
+		rawConfig, ok := c.Get(configName)
+		if !ok {
+			return nil, errors.New("Config not found: " + configName)
+		}
+		if config, ok := rawConfig.(*Config); ok {
+			configList[configName] = config
+		} else {
+			return nil, errors.New("Config not parsable: " + configName)
+		}
+	}
+	return configList, nil
+}
+
+func getVarStream(prefix string, wg *sync.WaitGroup) <-chan string {
 	variableStream := make(chan string, len(os.Environ()))
 	wg.Add(1)
 	go func() {
@@ -196,20 +215,20 @@ func getVars(prefix string, wg *sync.WaitGroup) <-chan string {
 			if strings.Split(envVar, "_")[0] != prefix {
 				continue
 			}
-			variableStream <- envVar
+			variableStream <- strings.TrimPrefix(envVar, prefix+"_")
 		}
 	}()
 	return variableStream
 }
 
-func parseStream(variableStream <-chan string, wg *sync.WaitGroup, prefixLen int) <-chan *ConfEntry {
-	entries := make(chan *ConfEntry, 1)
+func parseVarStream(variableStream <-chan string, wg *sync.WaitGroup) <-chan *configEntry {
+	entries := make(chan *configEntry, 1)
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		defer close(entries)
 		for envVar := range variableStream {
-			if val, err := parseEnvVar(envVar, prefixLen); err == nil {
+			if val, err := parseEnvVar(envVar); err == nil {
 				entries <- val
 			} else {
 				panic(err)
@@ -219,92 +238,58 @@ func parseStream(variableStream <-chan string, wg *sync.WaitGroup, prefixLen int
 	return entries
 }
 
-func setEntries(entryStream <-chan *ConfEntry, wg *sync.WaitGroup, config *Config) {
+func (c *Config) setEntries(entryStream <-chan *configEntry, wg *sync.WaitGroup) {
 	for entry := range entryStream {
 		wg.Add(1)
-		go func(entry *ConfEntry) {
+		go func(entry *configEntry) {
 			defer wg.Done()
-			config.SetEntry(entry)
+			if err := c.Set(strings.Join(entry.key, SUB_SEPARATOR), entry.value); err != nil {
+				panic(err)
+			}
 		}(entry)
 	}
 }
 
-func LoadConfig(prefix string) *Config {
-	return LoadConfigWithLogger(prefix, log.New(os.Stdout, "[Config] ", log.LstdFlags))
-}
-
-func LoadConfigWithLogger(prefix string, logger *log.Logger) *Config {
-	logger.Println("Loading config from environment variables (prefix: " + prefix + ")")
-	waitGroup := &sync.WaitGroup{}
-	timeoutChannel := make(chan bool, 1)
-	config := NewConfig(logger)
-	go func() {
-		defer close(timeoutChannel)
-		variableStream := getVars(prefix, waitGroup)
-		entries := parseStream(variableStream, waitGroup, len(prefix))
-		setEntries(entries, waitGroup, config)
-		waitGroup.Wait()
-	}()
-	logger.Println("Waiting for config to load...")
-	select {
-	case <-timeoutChannel:
-		logger.Println("Config loaded")
-		return config
-	case <-time.After(10 * time.Second):
-		logger.Fatalln("Config load timeout - partial config supplied")
-		return nil
-	}
-}
-
-func LoadConfigMaps(config *Config, configNames []string) (map[string]*ConfigMap, error) {
-	configList := make(map[string]*ConfigMap)
-	for _, configName := range configNames {
-		rawConfigMap, ok := config.Get(configName)
-		if !ok {
-			return nil, errors.New("Config not found: " + configName)
-		}
-		if configMap, ok := rawConfigMap.(*ConfigMap); ok {
-			configList[configName] = configMap
-		} else {
-			return nil, errors.New("Config not mappable: " + configName)
+func (c *Config) Sprint() string {
+	c.RLock()
+	defer c.RUnlock()
+	var buffer strings.Builder
+	for k, v := range c.store {
+		switch entry := v.(type) {
+		case *Config:
+			buffer.WriteString(fmt.Sprintf("%s:\n\t%s", k, entry.Sprint()))
+		default:
+			buffer.WriteString(fmt.Sprintf("%s:\t%s", k, entry))
+			buffer.WriteString("\n")
 		}
 	}
-	return configList, nil
+	return buffer.String()
 }
 
-func parseEnvVar(envVar string, prefixLen int) (*ConfEntry, error) {
-	rawKey, value, err := twoSplit(envVar, "=")
+func (c *Config) Print() {
+	fmt.Printf("Config:\n%+v\n", c.Sprint())
+}
+
+func parseEnvVar(envVar string) (*configEntry, error) {
+	key, value, err := SplitOffFirst(envVar, "=")
 	if err != nil {
 		return nil, err
 	}
-	key := string(rawKey[(prefixLen + 1):])
-	key = strings.ToUpper(key)
 
 	if strings.HasSuffix(key, "_FILE") {
 		log.Println("Loading config from file: " + value)
 		if file, err := os.Open(value); err == nil {
 			defer file.Close()
 			value = readEnvFromFile(file)
-			key = key[:len(key)-5]
+			key = strings.TrimSuffix(key, "_FILE")
 		} else {
 			return nil, err
 		}
 	}
 
-	if strings.Contains(key, "_") {
-		parent, field, err := twoSplit(key, "_")
-		if err != nil {
-			log.Println(err)
-		}
-		return &ConfEntry{
-			parent: string(parent),
-			field:  string(field),
-			value:  value,
-		}, nil
-	}
-	return &ConfEntry{
-		parent: key,
-		value:  value,
+	return &configEntry{
+		key:   strings.Split(key, "_"),
+		value: value,
 	}, nil
 }
 
@@ -315,4 +300,13 @@ func readEnvFromFile(file *os.File) string {
 		buffer.WriteString(scanner.Text())
 	}
 	return strings.Trim(buffer.String(), "\r\n")
+}
+
+func SplitOffFirst(variable string, splitter string) (string, string, error) {
+	split := strings.Split(variable, splitter)
+	if len(split) < 2 {
+		return "", "", ErrNotSplitAble
+	}
+	firstPart, otherParts := split[0], split[1:]
+	return firstPart, strings.Join(otherParts, splitter), nil
 }

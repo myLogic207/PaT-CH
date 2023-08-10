@@ -13,6 +13,8 @@
 			"jackc",
 			"joho",
 			"PATCHTEST",
+			"PATCHTESTCONF",
+			"PATCHTESTDB",
 			"pgconn",
 			"pgxpool",
 			"redisdb"

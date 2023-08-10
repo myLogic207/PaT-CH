@@ -5,10 +5,11 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/myLogic207/PaT-CH/pkg/util"
 )
 
 var ctx context.Context = context.Background()
@@ -29,8 +30,8 @@ func tableName(name string) string {
 func TestMain(m *testing.M) {
 	var db_test_password string
 
-	if file, ok := os.LookupEnv("PATCHTEST_DB_PASSWORD_FILE"); !ok {
-		panic("PATCHTEST_DB_PASSWORD_FILE not set")
+	if file, ok := os.LookupEnv("PATCHTESTDB_PASSWORD_FILE"); !ok {
+		panic("PATCHTESTDB_PASSWORD_FILE not set")
 	} else if _, err := os.Stat(file); err != nil {
 		panic(err)
 	} else if raw_db_test_password, err := os.ReadFile(file); err != nil {
@@ -39,15 +40,15 @@ func TestMain(m *testing.M) {
 		db_test_password = strings.Trim(string(raw_db_test_password), "\r\n")
 	}
 
-	config := &DataConfig{
-		Host:     "patch-test-6310.7tc.cockroachlabs.cloud",
-		Port:     26257,
-		User:     "patch_test",
-		password: db_test_password,
-		DBname:   "patch_db_test",
-		SSLmode:  "verify-full",
-	}
-	db, err := NewConnectorWithConf(ctx, config, log.Default())
+	config := util.NewConfig(map[string]interface{}{
+		"Host":     "patch-test-6310.7tc.cockroachlabs.cloud",
+		"Port":     26257,
+		"User":     "patch_test",
+		"password": db_test_password,
+		"DBname":   "patch_db_test",
+		"SSLmode":  "verify-full",
+	}, nil)
+	db, err := NewConnector(ctx, nil, config)
 	if err != nil {
 		panic(err)
 	}
