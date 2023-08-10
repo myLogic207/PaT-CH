@@ -77,7 +77,6 @@ func (c *Config) GetString(keyString string) (string, bool) {
 	} else {
 		return fmt.Sprintf("%v", str), true
 	}
-	return "", false
 }
 
 func (c *Config) GetConfig(keyString string) (*Config, bool) {
