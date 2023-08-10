@@ -9,9 +9,9 @@ func TestConfigLoad(t *testing.T) {
 	t.Log("Testing Config Load")
 	os.Setenv("PATCHTESTCONF_SIMPLE", "test")
 	os.Setenv("PATCHTESTCONF_MAP_TEST", "abcde")
-	config := LoadConfig("PATCHTESTCONF", nil)
-	if config == nil {
-		t.Error("Config is nil")
+	config, err := LoadConfig("PATCHTESTCONF", nil)
+	if err != nil {
+		t.Error(err)
 	}
 	t.Logf("Config:\n%v", config.Sprint())
 	if val, ok := config.Get("SiMPLe"); ok {
@@ -50,9 +50,9 @@ func TestConfigWithFile(t *testing.T) {
 	}
 	os.Setenv("PATCHTESTCONF_SIMPLE_FILE", "test_conf.env")
 	// os.Setenv("PATCHTEST_MAP_FILE", "abcde")
-	config := LoadConfig("PATCHTESTCONF", nil)
-	if config == nil {
-		t.Error("Config is nil")
+	config, err := LoadConfig("PATCHTESTCONF", nil)
+	if err != nil {
+		t.Error(err)
 	}
 	t.Logf("Config:\n%v", config.Sprint())
 	if val, ok := config.Get("SiMPLe"); ok {

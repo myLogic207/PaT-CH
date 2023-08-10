@@ -17,8 +17,10 @@ var (
 	ErrNoConfigFile   = errors.New("no config file found")
 	ErrKeyNil         = errors.New("key cannot be nil")
 	ErrFieldNil       = errors.New("field cannot be nil")
+	ErrFieldNotNil    = errors.New("field already populated")
 	ErrNotSplitAble   = errors.New("string not split able, might not contain split character")
 	ErrFieldNotConfig = errors.New("config field is not a config map")
+	ErrLoadConfig     = errors.New("Config load timeout - partial config supplied")
 )
 
 type configEntry struct {
@@ -51,7 +53,7 @@ func NewConfig(initValues map[string]interface{}, logger *log.Logger) *Config {
 	return conf
 }
 
-func LoadConfig(prefix string, logger *log.Logger) *Config {
+func LoadConfig(prefix string, logger *log.Logger) (*Config, error) {
 	if logger == nil {
 		logger = log.Default()
 	}
@@ -63,10 +65,9 @@ func LoadConfig(prefix string, logger *log.Logger) *Config {
 	select {
 	case <-finishChannel:
 		logger.Println("Config loaded")
-		return config
+		return config, nil
 	case <-time.After(10 * time.Second):
-		logger.Fatalln("Config load timeout - partial config supplied")
-		return nil
+		return nil, ErrLoadConfig
 	}
 }
 
@@ -81,13 +82,22 @@ func (c *Config) GetString(keyString string) (string, bool) {
 	return "", false
 }
 
-func (c *Config) GetBool(keyString string) (bool, bool) {
+func (c *Config) GetConfig(keyString string) (*Config, bool) {
 	if val, ok := c.Get(keyString); ok {
-		if b, ok := val.(bool); ok {
-			return b, true
+		if config, ok := val.(*Config); ok {
+			return config, true
 		}
 	}
-	return false, false
+	return nil, false
+}
+
+func (c *Config) GetBool(keyString string) bool {
+	if val, ok := c.Get(keyString); ok {
+		if b, ok := val.(bool); ok {
+			return b
+		}
+	}
+	return false
 }
 
 func (c *Config) Get(keyString string) (interface{}, bool) {
@@ -160,6 +170,36 @@ func (c *Config) setRecursive(key []string, value interface{}) error {
 		c.logger.Printf("Config field %s is not a config map", currentKey)
 		return ErrFieldNotConfig
 	}
+}
+
+func (c *Config) MergeInConfig(nestKey string, defaultConfig *Config) error {
+	var currentConfig *Config
+	if rawCurrentConfig, ok := c.Get(nestKey); ok {
+		if currentConfig, ok = rawCurrentConfig.(*Config); !ok {
+			return ErrFieldNotConfig
+		}
+	} else {
+		return c.Set(nestKey, defaultConfig)
+	}
+
+	for key, rawValue := range defaultConfig.store {
+		if configEntry, ok := currentConfig.Get(key); !ok {
+			if err := currentConfig.Set(key, rawValue); err != nil {
+				return err
+			}
+		} else if configEntry, ok := configEntry.(*Config); ok {
+			if value, ok := rawValue.(*Config); ok {
+				if err := configEntry.MergeInConfig(key, value); err != nil {
+					return err
+				}
+			} else {
+				return ErrFieldNotConfig
+			}
+		} else {
+			continue
+		}
+	}
+	return nil
 }
 
 func (c *Config) MergeDefault(defaultConfig map[string]interface{}) error {
