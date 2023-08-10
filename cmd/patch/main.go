@@ -3,6 +3,9 @@ package main
 import (
 	"context"
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	_ "github.com/joho/godotenv/autoload"
@@ -14,8 +17,56 @@ import (
 
 var SYSTEM_LIST = []string{"db", "redis", "api"}
 
+func loadApi(ctx context.Context, prefix string, mainConfig *util.Config, dbConnection api.UserTable) (*api.Server, error) {
+	logger, config, err := setup.PrepareSubsystemInit(prefix, "API", []string{"redis"}, mainConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	server, err := api.NewServer(ctx, logger, config, dbConnection)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := server.Init(); err != nil && err != api.ErrOpenInitFile {
+		return nil, err
+	}
+
+	return server, nil
+}
+
+func loadDB(ctx context.Context, prefix string, mainConfig *util.Config) (*data.DataBase, error) {
+	logger, config, err := setup.PrepareSubsystemInit(prefix, "DB", []string{"redis"}, mainConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	database, err := data.NewConnector(ctx, logger, config)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := database.Init(); err != nil && err != data.ErrOpenInitFile {
+		return nil, err
+	}
+
+	return database, nil
+}
+
+func registerSignalHandlers() {
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-c
+		cleanup()
+		os.Exit(1)
+	}()
+}
+
 func main() {
+	defer cleanup()
 	log.Println("starting System...")
+	registerSignalHandlers()
 	prefix, timeout, err := setup.PrepareEnvironment()
 	if err != nil {
 		log.Fatalln("error while preparing environment: ", err)
@@ -35,65 +86,25 @@ func main() {
 	if err != nil {
 		logger.Fatalln("error while preparing logger: ", err)
 	}
-	config := util.LoadConfig(prefix, configLogger)
-	if config == nil {
-		logger.Fatalln("error while loading config")
-	}
-	configMaps, err := config.LoadConfigs(SYSTEM_LIST)
+	mainConfig, err := util.LoadConfig(prefix, configLogger)
 	if err != nil {
-		logger.Fatalln("error while loading config maps: ", err)
+		logger.Fatalln("error while loading config: ", err)
 	}
 
 	// Load and prepare components
 	// Load DB
-	dbLogger, err := util.CreateLogger(prefix + " [DB]")
+	database, err := loadDB(mainContext, prefix, mainConfig)
 	if err != nil {
-		logger.Fatalln("error while preparing logger: ", err)
-	}
-	dbConfig, ok := configMaps["db"]
-	if !ok {
-		logger.Fatalln("error while loading db config")
-	}
-	redisConfig, ok := configMaps["redis"]
-	if ok {
-		dbConfig.Set("redis", redisConfig)
-	}
-	database, err := data.NewConnector(mainContext, dbLogger, dbConfig)
-	if err != nil {
-		logger.Fatalln("error while creating database connector: ", err)
+		logger.Fatalln("error while loading database: ", err)
 	}
 
-	// Load API
-	apiLogger, err := util.CreateLogger(prefix + " [API]")
+	// Load API Server
+	server, err := loadApi(mainContext, prefix, mainConfig, database.Users)
 	if err != nil {
-		logger.Fatalln("error while preparing logger: ", err)
-	}
-	apiConfig, ok := configMaps["api"]
-	if !ok {
-		logger.Fatalln("error while loading api config")
-	}
-	if apiUseRedis, ok := apiConfig.GetBool("redis.use"); ok && apiUseRedis {
-		apiConfig.Set("redis", redisConfig)
-		apiConfig.Set("redis.use", true)
-	} else {
-		apiConfig.Set("redis.use", false)
-	}
-	server, err := api.NewServer(mainContext, apiLogger, database.Users, apiConfig)
-	if err != nil {
-		logger.Fatalln("error while creating server: ", err)
+		logger.Fatalln("error while loading api server: ", err)
 	}
 
-	// Initialize and start
-	logger.Println("Configs and Components loaded, starting...")
-	if err := database.Init(); err == data.ErrOpenInitFile {
-		logger.Println("Cannot open setup-file/file not found, skipping database initialization")
-	} else if err != nil {
-		logger.Fatalln("error while initializing database: ", err)
-	}
-	server.Init()
-	if err := server.Start(); err == api.ErrOpenInitFile {
-		logger.Println("Cannot open setup-file/file not found, skipping server initialization")
-	} else if err != nil {
+	if err := server.Start(); err != nil {
 		logger.Fatalln("error while starting server:", err)
 	}
 	logger.Println("Server started")
@@ -106,5 +117,16 @@ func main() {
 	}
 	for {
 		time.Sleep(time.Duration(1<<63 - 1))
+	}
+}
+
+func cleanup() {
+	// End function
+	log.Println("exiting...")
+	// terminate loggers
+	util.TerminateLoggers()
+	// capture exit error
+	if err := recover(); err != nil {
+		log.Fatalln("error while exiting: ", err.(error).Error())
 	}
 }

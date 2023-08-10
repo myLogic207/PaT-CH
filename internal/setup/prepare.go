@@ -7,6 +7,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/myLogic207/PaT-CH/pkg/util"
 )
 
 var SUB_DIRS = []string{"logs"}
@@ -80,4 +82,30 @@ func PrepareEnvironment() (string, int, error) {
 	}
 
 	return prefix, timeout, nil
+}
+
+func PrepareSubsystemInit(prefix string, subsystemName string, additionalSystems []string, mainConfig *util.Config) (*log.Logger, *util.Config, error) {
+	logger, err := util.CreateLogger(fmt.Sprintf("%s [%s]", prefix, subsystemName))
+	if err != nil {
+		return nil, nil, err
+	}
+	var config *util.Config
+	if rawConfig, ok := mainConfig.Get(subsystemName); ok {
+		config, ok = rawConfig.(*util.Config)
+		if !ok {
+			return nil, nil, errors.New("error while loading " + subsystemName + " config (config is not a config)")
+		}
+	} else {
+		return nil, nil, errors.New("error while loading " + subsystemName + " config (" + subsystemName + " config not found)")
+	}
+
+	for _, system := range additionalSystems {
+		if subConfig, ok := mainConfig.GetConfig(system); ok {
+			config.MergeInConfig(system, subConfig)
+		} else {
+			logger.Printf("warning: %s config not found, not using %s\n", system, system)
+		}
+	}
+
+	return logger, config, nil
 }

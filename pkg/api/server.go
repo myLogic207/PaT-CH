@@ -33,6 +33,7 @@ var (
 	ErrInitServer        = errors.New("could not initialize server")
 	ErrOpenInitFile      = errors.New("could not open init file")
 	ErrReadCert          = errors.New("could not read certificate")
+	ErrLoadInitFile      = errors.New("could not load init file")
 )
 
 type keyServerAddr string
@@ -49,31 +50,32 @@ type Server struct {
 }
 
 var defaultConfig = map[string]interface{}{
-	"host": "localhost",
-	"port": 80,
+	"host":     "localhost",
+	"port":     80,
+	"initFile": "api.init.d",
 	"redis": map[string]interface{}{
 		"use": false,
 	},
-	"initFile": "api.init.d",
 }
 
-func NewServer(ctx context.Context, logger *log.Logger, db UserTable, config *util.Config) (*Server, error) {
+func NewServer(ctx context.Context, logger *log.Logger, config *util.Config, db UserTable) (*Server, error) {
 	var cache sessions.Store
 	if logger == nil {
 		logger = log.Default()
 	}
 	config.MergeDefault(defaultConfig)
-	if use_redis, ok := config.GetBool("redis.use"); ok && use_redis {
-		logger.Println("Using Redis Cache")
+	if rawRedisConfig, ok := config.Get("redis"); ok {
 		var redisConfig *util.Config
-		if rawRedisConfig, ok := config.Get("redis"); ok {
-			if redisConfig, ok = rawRedisConfig.(*util.Config); !ok {
+		if redisConfig, ok = rawRedisConfig.(*util.Config); !ok {
+			return nil, ErrInitServer
+		}
+
+		if redisConfig.GetBool("use") {
+			logger.Println("Using redis cache")
+			var err error
+			if cache, err = connectRedisCache(redisConfig); err != nil {
 				return nil, ErrInitServer
 			}
-		}
-		var err error
-		if cache, err = connectRedisCache(redisConfig); err != nil {
-			return nil, ErrInitServer
 		}
 	}
 
@@ -204,7 +206,7 @@ func (s *Server) loadInitDir(folderPath string, sessionCtl *SessionControl) erro
 		}
 		if err := s.loadInitFile(filepath.Join(folderPath, info.Name()), s.sessionCtl); err != nil {
 			s.logger.Println(err)
-			return ErrInitServer
+			return ErrLoadInitFile
 		}
 	}
 	return nil

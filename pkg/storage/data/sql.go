@@ -114,14 +114,21 @@ func NewConnector(ctx context.Context, logger *log.Logger, config *util.Config) 
 		logger:  logger,
 	}
 	dbConn.Users = NewUserDB(dbConn, "users", logger)
-
-	if useCache, ok := config.GetBool("UseCache"); ok && useCache {
-		if err := dbConn.SetCache(config); err != nil {
-			return nil, err
+	dbConn.cache = cache.NewStubConnector()
+	if rawRedisConfig, ok := config.Get("redis"); ok {
+		var redisConfig *util.Config
+		if redisConfig, ok = rawRedisConfig.(*util.Config); !ok {
+			return nil, ErrInitDB
 		}
-	} else {
-		dbConn.cache = cache.NewStubConnector()
+
+		if redisConfig.GetBool("use") {
+			logger.Println("Using redis cache")
+			if err := dbConn.SetCache(config); err != nil {
+				return nil, err
+			}
+		}
 	}
+
 	logger.Println("connected to database")
 	return dbConn, nil
 }

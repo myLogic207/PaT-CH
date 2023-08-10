@@ -33,7 +33,7 @@ func startTestServer() *Server {
 			"use": false,
 		},
 	}, nil)
-	s, err := NewServer(ctx, log.Default(), NewUserIMDB(), apiConfig)
+	s, err := NewServer(ctx, log.Default(), apiConfig, NewUserIMDB())
 	if err != nil {
 		panic(err)
 	}
