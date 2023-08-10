@@ -47,31 +47,27 @@ func NewConnector(config *util.Config, logger *log.Logger) (*RedisConnector, err
 		config = util.NewConfig(redis_default_config, nil)
 	}
 	redisOptions := &redis.Options{}
-	host, _ := config.Get("host")
-	port, _ := config.Get("port")
+	host, _ := config.GetString("host")
+	port, _ := config.GetString("port")
 	redisOptions.Addr = fmt.Sprintf("%s:%s", host, port)
 	password, _ := config.GetString("password")
 	redisOptions.Password = password
-	db, _ := config.Get("db")
-	if db, ok := db.(int); ok {
+	if db, ok := config.Get("db").(int); ok {
 		redisOptions.DB = db
 	} else {
 		redisOptions.DB = 0
 	}
-	idleConn, _ := config.Get("idle.Conn")
-	if idleConn, ok := idleConn.(int); ok {
+	if idleConn, ok := config.Get("idle.Conn").(int); ok {
 		redisOptions.MaxIdleConns = idleConn
 	} else {
 		redisOptions.MaxIdleConns = 10
 	}
-	idleTimeout, _ := config.Get("Idle.Timeout")
-	if idleTimeout, ok := idleTimeout.(int); ok {
+	if idleTimeout, ok := config.Get("Idle.Timeout").(int); ok {
 		redisOptions.ConnMaxIdleTime = time.Duration(idleTimeout) * time.Second
 	} else {
 		redisOptions.ConnMaxIdleTime = 0
 	}
-	maxActive, _ := config.Get("pool")
-	if maxActive, ok := maxActive.(int); ok {
+	if maxActive, ok := config.Get("pool").(int); ok {
 		redisOptions.PoolSize = maxActive
 	} else {
 		redisOptions.PoolSize = 10

@@ -72,64 +72,58 @@ func LoadConfig(prefix string, logger *log.Logger) (*Config, error) {
 }
 
 func (c *Config) GetString(keyString string) (string, bool) {
-	if val, ok := c.Get(keyString); ok {
-		if str, ok := val.(string); ok {
-			return str, true
-		} else {
-			return fmt.Sprintf("%v", val), true
-		}
+	if str, ok := c.Get(keyString).(string); ok {
+		return str, true
+	} else {
+		return fmt.Sprintf("%v", str), true
 	}
 	return "", false
 }
 
 func (c *Config) GetConfig(keyString string) (*Config, bool) {
-	if val, ok := c.Get(keyString); ok {
-		if config, ok := val.(*Config); ok {
-			return config, true
-		}
+	if config, ok := c.Get(keyString).(*Config); ok {
+		return config, true
 	}
 	return nil, false
 }
 
 func (c *Config) GetBool(keyString string) bool {
-	if val, ok := c.Get(keyString); ok {
-		if b, ok := val.(bool); ok {
-			return b
-		}
+	if val, ok := c.Get(keyString).(bool); ok {
+		return val
 	}
 	return false
 }
 
-func (c *Config) Get(keyString string) (interface{}, bool) {
-	c.logger.Printf("Getting config field: %s", keyString)
+func (c *Config) Get(keyString string) interface{} {
+	c.logger.Printf("Getting config field: %s", strings.ToLower(keyString))
 	key := strings.Split(keyString, SUB_SEPARATOR)
 	if len(key) == 0 {
 		c.logger.Println("Config field key cannot be nil")
-		return nil, false
+		return nil
 	}
 	return c.getRecursive(key)
 }
 
-func (c *Config) getRecursive(key []string) (interface{}, bool) {
+func (c *Config) getRecursive(key []string) interface{} {
 	c.RLock()
 	defer c.RUnlock()
 	currentKey := strings.ToLower(key[0])
 	if len(key) == 1 {
 		if val, ok := c.store[currentKey]; ok {
-			return val, true
+			return val
 		}
-		return nil, false
+		return nil
 	}
 
 	if config, ok := c.store[currentKey].(*Config); ok {
 		return config.getRecursive(key[1:])
 	}
 
-	return nil, false
+	return nil
 }
 
 func (c *Config) Set(keyString string, value interface{}) error {
-	c.logger.Printf("Setting config field: %s", keyString)
+	c.logger.Printf("Setting config field: %s", strings.ToLower(keyString))
 	key := strings.Split(keyString, SUB_SEPARATOR)
 
 	keyLength := len(key)
@@ -163,7 +157,6 @@ func (c *Config) setRecursive(key []string, value interface{}) error {
 		c.store[currentKey] = NewConfig(nil, c.logger)
 	}
 	c.Unlock()
-
 	if config, ok := c.store[currentKey].(*Config); ok {
 		return config.setRecursive(key[1:], value)
 	} else {
@@ -174,16 +167,16 @@ func (c *Config) setRecursive(key []string, value interface{}) error {
 
 func (c *Config) MergeInConfig(nestKey string, defaultConfig *Config) error {
 	var currentConfig *Config
-	if rawCurrentConfig, ok := c.Get(nestKey); ok {
-		if currentConfig, ok = rawCurrentConfig.(*Config); !ok {
-			return ErrFieldNotConfig
-		}
-	} else {
+	var ok bool
+	rawCurrentConfig := c.Get(nestKey)
+	if currentConfig, ok = rawCurrentConfig.(*Config); !ok {
+		return ErrFieldNotConfig
+	} else if rawCurrentConfig != nil {
 		return c.Set(nestKey, defaultConfig)
 	}
 
 	for key, rawValue := range defaultConfig.store {
-		if configEntry, ok := currentConfig.Get(key); !ok {
+		if configEntry := currentConfig.Get(key); configEntry == nil {
 			if err := currentConfig.Set(key, rawValue); err != nil {
 				return err
 			}
@@ -204,7 +197,7 @@ func (c *Config) MergeInConfig(nestKey string, defaultConfig *Config) error {
 
 func (c *Config) MergeDefault(defaultConfig map[string]interface{}) error {
 	for rawKey, rawValue := range defaultConfig {
-		if _, ok := c.Get(rawKey); ok {
+		if val := c.Get(rawKey); val != nil {
 			continue
 		}
 		if err := c.Set(rawKey, rawValue); err != nil {
@@ -227,8 +220,8 @@ func (c *Config) loadVarsFromEnv(prefix string, finishChannel chan bool) {
 func (c *Config) LoadConfigs(configNames []string) (map[string]*Config, error) {
 	configList := make(map[string]*Config)
 	for _, configName := range configNames {
-		rawConfig, ok := c.Get(configName)
-		if !ok {
+		rawConfig := c.Get(configName)
+		if rawConfig == nil {
 			return nil, errors.New("Config not found: " + configName)
 		}
 		if config, ok := rawConfig.(*Config); ok {

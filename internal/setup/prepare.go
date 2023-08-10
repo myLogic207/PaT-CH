@@ -20,10 +20,8 @@ func ensureDir(path string) error {
 				return err
 			}
 		}
-	} else if !fileInfo.IsDir() {
-		return errors.New("working directory is not a directory")
-	} else if fileInfo.Mode().Perm() != 0777 {
-		return errors.New("working directory is not accessible")
+	} else if !fileInfo.IsDir() || fileInfo.Mode().Perm() != 0777 {
+		return errors.New("directory is not accessible")
 	}
 	return nil
 }
@@ -89,14 +87,9 @@ func PrepareSubsystemInit(prefix string, subsystemName string, additionalSystems
 	if err != nil {
 		return nil, nil, err
 	}
-	var config *util.Config
-	if rawConfig, ok := mainConfig.Get(subsystemName); ok {
-		config, ok = rawConfig.(*util.Config)
-		if !ok {
-			return nil, nil, errors.New("error while loading " + subsystemName + " config (config is not a config)")
-		}
-	} else {
-		return nil, nil, errors.New("error while loading " + subsystemName + " config (" + subsystemName + " config not found)")
+	config, ok := mainConfig.Get(subsystemName).(*util.Config)
+	if !ok {
+		return nil, nil, errors.New("error while loading " + subsystemName + " config")
 	}
 
 	for _, system := range additionalSystems {

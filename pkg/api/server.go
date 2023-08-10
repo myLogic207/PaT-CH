@@ -64,12 +64,7 @@ func NewServer(ctx context.Context, logger *log.Logger, config *util.Config, db 
 		logger = log.Default()
 	}
 	config.MergeDefault(defaultConfig)
-	if rawRedisConfig, ok := config.Get("redis"); ok {
-		var redisConfig *util.Config
-		if redisConfig, ok = rawRedisConfig.(*util.Config); !ok {
-			return nil, ErrInitServer
-		}
-
+	if redisConfig, ok := config.Get("redis").(*util.Config); ok {
 		if redisConfig.GetBool("use") {
 			logger.Println("Using redis cache")
 			var err error
@@ -77,6 +72,8 @@ func NewServer(ctx context.Context, logger *log.Logger, config *util.Config, db 
 				return nil, ErrInitServer
 			}
 		}
+	} else {
+		return nil, ErrInitServer
 	}
 
 	if cache == nil {
@@ -146,12 +143,8 @@ func connectRedisCache(redisConfig *util.Config) (redis.Store, error) {
 		return nil, ErrRedisConf
 	}
 	var port uint16
-	if redisPort, ok := redisConfig.Get("port"); ok {
-		if redisPort, ok := redisPort.(uint16); ok {
-			port = redisPort
-		} else {
-			return nil, ErrRedisConf
-		}
+	if redisPort, ok := redisConfig.Get("port").(uint16); ok {
+		port = redisPort
 	} else {
 		return nil, ErrRedisConf
 	}

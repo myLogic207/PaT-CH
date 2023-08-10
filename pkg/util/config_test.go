@@ -14,30 +14,18 @@ func TestConfigLoad(t *testing.T) {
 		t.Error(err)
 	}
 	t.Logf("Config:\n%v", config.Sprint())
-	if val, ok := config.Get("SiMPLe"); ok {
-		if val.(string) != "test" {
-			t.Error("Config is not loaded correctly (level 1)")
-		}
-	} else {
+	if str, ok := config.Get("SiMPLe").(string); !ok || str != "test" {
 		t.Error("Config is not loaded correctly (level 0)")
 	}
 
-	if rawMap, ok := config.Get("MAP"); ok {
-		if confMap, ok := rawMap.(*Config); ok {
-			if val, ok := confMap.Get("test"); !ok || val != "abcde" {
-				t.Error("Config is not loaded correctly (level 3)")
-			}
-		} else {
-			t.Error("Config is not loaded correctly (level 2)")
+	if confMap, ok := config.Get("MAP").(*Config); ok {
+		if val, ok := confMap.GetString("test"); !ok || val != "abcde" {
+			t.Error("Config is not loaded correctly (level 3)")
 		}
 	}
 
-	if directTest, ok := config.Get("MAP.TEST"); ok {
-		if directTest != "abcde" {
-			t.Error("Config is not loaded correctly (level 4)")
-		}
-	} else {
-		t.Error("Config is not loaded correctly (level 3)")
+	if directTest, ok := config.GetString("MAP.TEST"); !ok || directTest != "abcde" {
+		t.Error("Config is not loaded correctly (level 4)")
 	}
 }
 
@@ -55,12 +43,8 @@ func TestConfigWithFile(t *testing.T) {
 		t.Error(err)
 	}
 	t.Logf("Config:\n%v", config.Sprint())
-	if val, ok := config.Get("SiMPLe"); ok {
-		if val.(string) != testValue {
-			t.Error("Config is not loaded correctly (level 1)")
-		}
-	} else {
-		t.Error("Config is not loaded correctly (level 0)")
+	if val, ok := config.Get("SiMPLe").(string); !ok || val != testValue {
+		t.Error("Config is not loaded correctly (level 1)")
 	}
 
 	if err := os.Remove("test_conf.env"); err != nil {
@@ -84,22 +68,15 @@ func TestConfigWithInitialValue(t *testing.T) {
 		t.Error("Config is not loaded correctly (direct level 0)")
 	}
 
-	if rawNestedTest, ok := config.Get("nested"); ok {
-		if nestedTest, ok := rawNestedTest.(*Config); ok {
-			if val, ok := nestedTest.GetString("string"); !ok || val != "nestedTestValue" {
-				t.Error("Config is not loaded correctly (level 1)")
-			}
-		} else {
-			t.Error("Config has non-parsable sub config")
+	if nestedTest, ok := config.Get("nested").(*Config); ok {
+		if val, ok := nestedTest.GetString("string"); !ok || val != "nestedTestValue" {
+			t.Error("Config is not loaded correctly (level 1)")
 		}
 	} else {
-		t.Error("Config is not loaded correctly (nested level 0)")
+		t.Error("Config has non-parsable sub config")
 	}
 
-	if val, ok := config.Get("example.test.number"); !ok {
-		if val.(int) != 234567 {
-			t.Error("Config is not loaded correctly (level 2)")
-		}
+	if val := config.Get("example.test.number").(int); val != 234567 {
+		t.Error("Config is not loaded correctly (level 2)")
 	}
-
 }

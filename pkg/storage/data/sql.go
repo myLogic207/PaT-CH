@@ -115,18 +115,15 @@ func NewConnector(ctx context.Context, logger *log.Logger, config *util.Config) 
 	}
 	dbConn.Users = NewUserDB(dbConn, "users", logger)
 	dbConn.cache = cache.NewStubConnector()
-	if rawRedisConfig, ok := config.Get("redis"); ok {
-		var redisConfig *util.Config
-		if redisConfig, ok = rawRedisConfig.(*util.Config); !ok {
-			return nil, ErrInitDB
-		}
-
+	if redisConfig, ok := config.Get("redis").(*util.Config); ok && redisConfig != nil {
 		if redisConfig.GetBool("use") {
 			logger.Println("Using redis cache")
 			if err := dbConn.SetCache(config); err != nil {
 				return nil, err
 			}
 		}
+	} else if !ok {
+		return nil, errors.New("error parsing redis config")
 	}
 
 	logger.Println("connected to database")
@@ -179,11 +176,10 @@ func buildConnString(config *util.Config) string {
 }
 
 func (db *DataBase) SetCache(config *util.Config) error {
-	var redisConf *util.Config
-	if rawRedisConf, ok := config.Get("redis"); ok {
-		if redisConf, ok = rawRedisConf.(*util.Config); !ok {
-			return ErrParseConfig
-		}
+	redisConf, ok := config.Get("redis").(*util.Config)
+	if !ok {
+		db.logger.Println("No redis config provided")
+		return nil
 	}
 	cache, err := cache.NewConnector(redisConf, db.logger)
 	if err != nil {
