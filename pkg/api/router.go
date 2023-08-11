@@ -10,9 +10,12 @@ import (
 
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
+	"github.com/myLogic207/PaT-CH/pkg/api/internal"
 )
 
-type SessionLog struct {
+var apiSkipPaths = []string{"/api/v1/health"}
+
+type ApiLog struct {
 	TimeStamp    string        `json:"time_stamp"`
 	ClientIP     string        `json:"client_ip"`
 	Method       string        `json:"method"`
@@ -24,12 +27,10 @@ type SessionLog struct {
 	ErrorMessage string        `json:"error_message"`
 }
 
-var apiSkipPaths = []string{"/api/v1/health"}
-
-func NewRouter(sessionCtl *SessionControl, logger *log.Logger, cache sessions.Store) *gin.Engine {
+func NewRouter(logger *log.Logger, cache sessions.Store, args ...any) *gin.Engine {
 	router := gin.New()
 	router.Use(gin.LoggerWithConfig(gin.LoggerConfig{
-		Formatter: apiLogFormatter,
+		Formatter: generateLogFormatter,
 		Output:    logger.Writer(),
 		SkipPaths: apiSkipPaths,
 	}))
@@ -46,38 +47,11 @@ func NewRouter(sessionCtl *SessionControl, logger *log.Logger, cache sessions.St
 	router.Use(gin.Recovery())
 	router.Use(sessions.Sessions("patch_session", cache))
 
-	addApiRoutes(router.Group("/api"), sessionCtl)
+	addPatchRoutes(router.Group("/patch"))
+	internal.AddRoutes(router.Group("/"), args...)
 
 	return router
 }
-
-// /api routes
-func addApiRoutes(api *gin.RouterGroup, sessionCtl *SessionControl) {
-	addV1Routes(api.Group("/v1"), sessionCtl)
-}
-
-// /api/v1 routes
-func addV1Routes(v1 *gin.RouterGroup, sessionCtl *SessionControl) {
-	v1.GET("/health", routeHealth)
-	v1.POST("/register", sessionCtl.register)
-	v1.GET("/forward/:dest", ForwardRequest)
-	v1.POST("/connect", sessionCtl.Connect)
-	v1.POST("/disconnect", sessionCtl.Disconnect)
-	addPatchRoutes(v1.Group("/patch"))
-	addUserRoutes(v1.Group("/user"), sessionCtl)
-}
-
-// /api/v1/user routes
-func addUserRoutes(user *gin.RouterGroup, sessionCtl *SessionControl) {
-	user.Use(sessionCtl.UserRoutePass)
-	user.GET("/", sessionCtl.GetUser)
-	// user.POST("/", UpdateUser)
-	user.DELETE("/", sessionCtl.DeleteUser)
-	user.GET("/status", sessionCtl.Status)
-	user.GET("/session", sessionCtl.GetSession)
-}
-
-// routes
 
 func routePing(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
@@ -85,15 +59,7 @@ func routePing(c *gin.Context) {
 	})
 }
 
-// Api routes (v1)
-
-func routeHealth(c *gin.Context) {
-	// Return a simple object to indicate that the service is up.
-	c.Status(http.StatusOK)
-}
-
-// Middleware
-func apiLogFormatter(params gin.LogFormatterParams) string {
+func generateLogFormatter(params gin.LogFormatterParams) string {
 	outLog := createLog(params)
 	out, err := json.Marshal(outLog)
 	if err != nil {
@@ -102,8 +68,8 @@ func apiLogFormatter(params gin.LogFormatterParams) string {
 	return string(out) + "\n"
 }
 
-func createLog(params gin.LogFormatterParams) *SessionLog {
-	outLog := &SessionLog{
+func createLog(params gin.LogFormatterParams) *ApiLog {
+	outLog := &ApiLog{
 		TimeStamp:  params.TimeStamp.Format("02/Jan/2006:15:04:05 -0700"),
 		ClientIP:   params.ClientIP,
 		Method:     params.Method,

@@ -14,7 +14,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/gin-contrib/sessions"
 	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-contrib/sessions/redis"
 	"github.com/gin-gonic/gin"
@@ -27,6 +26,7 @@ const (
 
 var (
 	ErrConnectionRefused = errors.New("connection refused")
+	ErrMergeConfig       = errors.New("could not merge config")
 	ErrRedisConf         = errors.New("could not parse redis config")
 	ErrStartServer       = errors.New("could not start server")
 	ErrStopServer        = errors.New("could not stop server")
@@ -39,31 +39,37 @@ var (
 type keyServerAddr string
 
 type Server struct {
-	config     *util.Config
-	cert       *Certificate
-	router     *gin.Engine
-	server     *http.Server
-	ctx        context.Context
-	sessionCtl *SessionControl
-	logger     *log.Logger
-	running    bool
+	config  *util.Config
+	cert    *Certificate
+	router  *gin.Engine
+	server  *http.Server
+	ctx     context.Context
+	logger  *log.Logger
+	running bool
 }
 
 var defaultConfig = map[string]interface{}{
-	"host":     "localhost",
-	"port":     80,
-	"initFile": "api.init.d",
-	"redis": map[string]interface{}{
-		"use": false,
-	},
+	"host":      "127.0.0.1",
+	"port":      80,
+	"initFile":  "api.init.d",
+	"redis.use": false,
 }
 
-func NewServer(ctx context.Context, logger *log.Logger, config *util.Config, db UserTable) (*Server, error) {
-	var cache sessions.Store
+func NewServer(ctx context.Context, logger *log.Logger, config *util.Config, args ...any) (*Server, error) {
 	if logger == nil {
 		logger = log.Default()
 	}
-	config.MergeDefault(defaultConfig)
+
+	if config == nil {
+		config = util.NewConfig(defaultConfig, logger)
+	} else {
+		if err := config.MergeDefault(defaultConfig); err != nil {
+			logger.Println(err)
+			return nil, ErrMergeConfig
+		}
+	}
+
+	cache := cookie.NewStore([]byte("secret"))
 	if redisConfig, ok := config.Get("redis").(*util.Config); ok {
 		if redisConfig.GetBool("use") {
 			logger.Println("Using redis cache")
@@ -76,17 +82,11 @@ func NewServer(ctx context.Context, logger *log.Logger, config *util.Config, db 
 		return nil, ErrInitServer
 	}
 
-	if cache == nil {
-		logger.Println("No cache provided, using cookie fallback")
-		cache = cookie.NewStore([]byte("secret"))
-	}
-
 	serverAddress := loadAddress(config)
 	if serverAddress == "" {
 		return nil, ErrInitServer
 	}
-	sessionCtl := NewSessionControl(db, logger)
-	router := NewRouter(sessionCtl, logger, cache)
+	router := NewRouter(logger, cache, args...)
 	httpServer := &http.Server{
 		Addr:    serverAddress,
 		Handler: router,
@@ -96,14 +96,13 @@ func NewServer(ctx context.Context, logger *log.Logger, config *util.Config, db 
 	}
 
 	return &Server{
-		config:     config,
-		router:     router,
-		server:     httpServer,
-		ctx:        ctx,
-		sessionCtl: sessionCtl,
-		running:    false,
-		logger:     logger,
-		cert:       loadCert(config),
+		config:  config,
+		router:  router,
+		server:  httpServer,
+		ctx:     ctx,
+		running: false,
+		logger:  logger,
+		cert:    loadCert(config),
 	}, nil
 }
 
@@ -176,13 +175,13 @@ func (s *Server) Init() error {
 		return nil
 	} else {
 		if fileStat.IsDir() {
-			return s.loadInitDir(initFile, s.sessionCtl)
+			return s.loadInitDir(initFile)
 		}
-		return s.loadInitFile(initFile, s.sessionCtl)
+		return s.loadInitFile(initFile)
 	}
 }
 
-func (s *Server) loadInitDir(folderPath string, sessionCtl *SessionControl) error {
+func (s *Server) loadInitDir(folderPath string) error {
 	files, err := os.ReadDir(folderPath)
 	if err != nil {
 		s.logger.Println(err)
@@ -197,7 +196,7 @@ func (s *Server) loadInitDir(folderPath string, sessionCtl *SessionControl) erro
 			s.logger.Println(err)
 			continue
 		}
-		if err := s.loadInitFile(filepath.Join(folderPath, info.Name()), s.sessionCtl); err != nil {
+		if err := s.loadInitFile(filepath.Join(folderPath, info.Name())); err != nil {
 			s.logger.Println(err)
 			return ErrLoadInitFile
 		}
@@ -205,7 +204,7 @@ func (s *Server) loadInitDir(folderPath string, sessionCtl *SessionControl) erro
 	return nil
 }
 
-func (s *Server) loadInitFile(path string, sessionCtl *SessionControl) error {
+func (s *Server) loadInitFile(path string) error {
 	if !strings.HasSuffix(path, ".json") {
 		return errors.New("not a json file: " + path)
 	}
@@ -267,7 +266,8 @@ func (s *Server) Addr(route string) string {
 	}
 	host, _ := s.config.GetString("host")
 	port, _ := s.config.GetString("port")
-	return fmt.Sprintf("%s%s:%s", pre, host, port)
+	route = strings.TrimPrefix(route, "/")
+	return fmt.Sprintf("%s%s:%s/%s", pre, host, port, route)
 }
 
 func (s *Server) SetRoute(method, path string, handler gin.HandlerFunc) {

@@ -1,12 +1,10 @@
-package api
+package main
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
-	"math/rand"
 	"net/http"
 	"net/http/cookiejar"
 	"os"
@@ -15,69 +13,55 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/myLogic207/PaT-CH/internal/system"
+	"github.com/myLogic207/PaT-CH/pkg/api"
 	"github.com/myLogic207/PaT-CH/pkg/util"
 )
 
-func randomOffset() uint16 {
-	return uint16(rand.Intn(1000))
+const (
+	BASE_ADDR = "http://localhost:12345"
+	PREFIX    = "PATCHTEST"
+)
+
+var TEST_SERVER *api.Server
+
+var DEFAULT_CONFIG = map[string]interface{}{
+	"api.port": 12345,
 }
 
-func startTestServer() *Server {
-	log.Println("Starting Test Server")
-	ctx := context.Background()
+func TestMain(m *testing.M) {
+	mainContext := context.TODO()
+	mainConfig := util.NewConfig(DEFAULT_CONFIG, nil)
 	gin.SetMode(gin.ReleaseMode)
-	apiConfig := util.NewConfig(map[string]interface{}{
-		"host": "localhost",
-		"port": 3080 + randomOffset(),
-		"redis": map[string]interface{}{
-			"use": false,
-		},
-	}, nil)
-	s, err := NewServer(ctx, log.Default(), apiConfig, NewUserIMDB())
+	server, err := loadApi(mainContext, PREFIX, mainConfig, system.NewUserIMDB())
 	if err != nil {
 		panic(err)
 	}
-	s.Start()
+	if err := server.Start(); err != nil {
+		panic(err)
+	}
+	TEST_SERVER = server
 	time.Sleep(10 * time.Nanosecond)
-	return s
-}
-
-var TEST_SERVER *Server = startTestServer()
-
-func TestMain(m *testing.M) {
 	exit := m.Run()
 	time.Sleep(10 * time.Nanosecond)
-	TEST_SERVER.Stop()
+	if err := server.Stop(); err != nil {
+		panic(err)
+	}
 	os.Exit(exit)
-}
-
-func TestServer(t *testing.T) {
-	t.Log("Testing Server Requests")
-
-	resp, err := http.DefaultClient.Get(TEST_SERVER.Addr("/api/v1/health"))
-	if err != nil {
-		t.Error(err)
-		return
-	}
-	t.Log("Request successful")
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("Expected 200, got %d", resp.StatusCode)
-	}
-	t.Log("Status Successful")
 }
 
 func TestSessionNonAuth(t *testing.T) {
 	t.Log("Testing Session Middleware")
-	resp, err := http.DefaultClient.Get(TEST_SERVER.Addr("/api/v1/user/session"))
+	resp, err := http.DefaultClient.Get(TEST_SERVER.Addr("/api/v1/auth/session"))
 	fmt.Print("\n")
 	if err != nil {
 		t.Error(err)
-		return
+		t.FailNow()
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Errorf("Expected 401, got %d", resp.StatusCode)
+		t.FailNow()
 	}
 	t.Log("Status Successful")
 }
@@ -97,7 +81,7 @@ func TestSessionUser(t *testing.T) {
 	client := http.Client{
 		Jar: jar,
 	}
-	user := rawUser{
+	user := system.RawUser{
 		Username: "test",
 		Password: "test123",
 	}
@@ -134,7 +118,7 @@ func TestSessionUser(t *testing.T) {
 	}
 	t.Log("Register Successful")
 
-	resp, err = client.Get(TEST_SERVER.Addr("/api/v1/user/status"))
+	resp, err = client.Get(TEST_SERVER.Addr("/api/v1/status"))
 	if err != nil {
 		t.Error(err)
 	}
@@ -145,7 +129,7 @@ func TestSessionUser(t *testing.T) {
 		t.FailNow()
 	}
 
-	login_req, err := http.NewRequest("POST", TEST_SERVER.Addr("/api/v1/connect"), strings.NewReader(string(login)))
+	login_req, err := http.NewRequest("POST", TEST_SERVER.Addr("/api/v1/auth/connect"), strings.NewReader(string(login)))
 	if err != nil {
 		t.Error(err)
 	}
@@ -185,7 +169,7 @@ func TestSessionUser(t *testing.T) {
 	// 	t.FailNow()
 	// }
 
-	resp, err = client.Get(TEST_SERVER.Addr("/api/v1/user/session"))
+	resp, err = client.Get(TEST_SERVER.Addr("/api/v1/auth/session"))
 	if err != nil {
 		t.Error(err)
 	}
@@ -212,7 +196,7 @@ func TestSessionUser(t *testing.T) {
 	}
 	t.Log("Status Successful")
 
-	delete_user, err := http.NewRequest("DELETE", TEST_SERVER.Addr("/api/v1/user"), nil)
+	delete_user, err := http.NewRequest("DELETE", TEST_SERVER.Addr("/api/v1/auth/user"), nil)
 	if err != nil {
 		t.Error(err)
 	}
