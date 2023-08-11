@@ -64,32 +64,37 @@ func registerSignalHandlers() {
 }
 
 func main() {
-	defer cleanup()
-	log.Println("starting System...")
+	mainContext, mainStop := context.WithCancel(context.Background())
+	defer cleanup(mainStop)
+	// Load and prepare configs
 	registerSignalHandlers()
 	prefix, timeout, err := setup.PrepareEnvironment()
 	if err != nil {
 		log.Fatalln("error while preparing environment: ", err)
 	}
+
+	mainConfig, err := util.LoadConfig(prefix, nil)
+	if err != nil {
+		log.Fatalln("error while loading config: ", err)
+	}
+	log.Println("starting System...")
+
+	if logConfig, ok := mainConfig.GetConfig("log"); ok {
+		if _, ok := logConfig.GetString("prefix"); !ok {
+			if err := logConfig.Set("prefix", prefix); err != nil {
+				log.Println("error setting default log prefix")
+			}
+		}
+		util.SetDefaultLogger(logConfig)
+	}
+
 	logger, err := util.CreateLogger(prefix)
 	if err != nil {
 		log.Fatalln("error while preparing logger: ", err)
 	}
 
 	logger.Print(setup.LOGO)
-
-	logger.Println("starting ", prefix, " server...")
-	mainContext, mainStop := context.WithCancel(context.Background())
-
-	// Load and prepare configs
-	configLogger, err := util.CreateLogger(prefix + " [CONFIG]")
-	if err != nil {
-		logger.Fatalln("error while preparing logger: ", err)
-	}
-	mainConfig, err := util.LoadConfig(prefix, configLogger)
-	if err != nil {
-		logger.Fatalln("error while loading config: ", err)
-	}
+	logger.Println("starting", prefix, "server...")
 
 	// Load and prepare components
 	// Load DB
@@ -120,9 +125,14 @@ func main() {
 	}
 }
 
-func cleanup() {
+func cleanup(cancelCtx ...context.CancelFunc) {
 	// End function
 	log.Println("exiting...")
+	if len(cancelCtx) > 0 {
+		for _, stop := range cancelCtx {
+			stop()
+		}
+	}
 	// terminate loggers
 	util.TerminateLoggers()
 	// capture exit error

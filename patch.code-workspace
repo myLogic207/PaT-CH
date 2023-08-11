@@ -12,12 +12,15 @@
 			"IMDB",
 			"jackc",
 			"joho",
+			"LOGFOLDER",
+			"LOGFOLDEROLD",
 			"PATCHTEST",
 			"PATCHTESTCONF",
 			"PATCHTESTDB",
 			"pgconn",
 			"pgxpool",
-			"redisdb"
+			"redisdb",
+			"REPLACECHAR"
 		],
 		"sqltools.connections": [
 			{

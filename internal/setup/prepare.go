@@ -13,22 +13,9 @@ import (
 
 var SUB_DIRS = []string{"logs"}
 
-func ensureDir(path string) error {
-	if fileInfo, err := os.Stat(path); err != nil {
-		if os.IsNotExist(err) {
-			if err := os.Mkdir(path, 0777); err != nil {
-				return err
-			}
-		}
-	} else if !fileInfo.IsDir() || fileInfo.Mode().Perm() != 0777 {
-		return errors.New("directory is not accessible")
-	}
-	return nil
-}
-
 func PrepareWorkDir(path string) error {
 	log.Println("setting working directory to", path)
-	if err := ensureDir(path); err != nil {
+	if err := util.EnsureDir(path); err != nil {
 		return err
 	}
 
@@ -38,7 +25,7 @@ func PrepareWorkDir(path string) error {
 
 	log.Println("ensuring sub directories")
 	for _, subDir := range SUB_DIRS {
-		if err := ensureDir(subDir); err != nil {
+		if err := util.EnsureDir(subDir); err != nil {
 			return err
 		}
 	}
