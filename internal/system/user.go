@@ -18,6 +18,12 @@ type User struct {
 	UpdatedAt time.Time `json:"updated_at" binding:"optional"`
 }
 
+type RawUser struct {
+	Username string `json:"username"`
+	// Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
 func NewUser(name string, email string) *User {
 	return &User{
 		Name:      name,

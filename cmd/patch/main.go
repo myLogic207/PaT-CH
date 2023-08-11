@@ -10,6 +10,7 @@ import (
 
 	_ "github.com/joho/godotenv/autoload"
 	"github.com/myLogic207/PaT-CH/internal/setup"
+	"github.com/myLogic207/PaT-CH/internal/system"
 	"github.com/myLogic207/PaT-CH/pkg/api"
 	"github.com/myLogic207/PaT-CH/pkg/storage/data"
 	"github.com/myLogic207/PaT-CH/pkg/util"
@@ -17,7 +18,7 @@ import (
 
 var SYSTEM_LIST = []string{"db", "redis", "api"}
 
-func loadApi(ctx context.Context, prefix string, mainConfig *util.Config, dbConnection api.UserTable) (*api.Server, error) {
+func loadApi(ctx context.Context, prefix string, mainConfig *util.Config, dbConnection system.UserTable) (*api.Server, error) {
 	logger, config, err := setup.PrepareSubsystemInit(prefix, "API", []string{"redis"}, mainConfig)
 	if err != nil {
 		return nil, err
@@ -104,7 +105,7 @@ func main() {
 	}
 
 	// Load API Server
-	server, err := loadApi(mainContext, prefix, mainConfig, database.Users)
+	server, err := loadApi(mainContext, prefix, mainConfig, database.GetUserDB())
 	if err != nil {
 		logger.Fatalln("error while loading api server: ", err)
 	}
