@@ -74,16 +74,17 @@ func PrepareSubsystemInit(prefix string, subsystemName string, additionalSystems
 	if err != nil {
 		return nil, nil, err
 	}
-	config, ok := mainConfig.Get(subsystemName).(*util.Config)
+	config, ok := mainConfig.GetConfig(subsystemName)
 	if !ok {
-		return nil, nil, errors.New("error while loading " + subsystemName + " config")
+		logger.Println("error loading config, using none/default")
+		return logger, nil, nil
 	}
 
 	for _, system := range additionalSystems {
 		if subConfig, ok := mainConfig.GetConfig(system); ok {
 			config.MergeInConfig(system, subConfig)
 		} else {
-			logger.Printf("warning: %s config not found, not using %s\n", system, system)
+			logger.Printf("warning: %s config not found, not using", system)
 		}
 	}
 

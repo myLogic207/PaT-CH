@@ -11,6 +11,11 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+var (
+	ErrMergeConfig     = errors.New("could not merge config")
+	ErrCouldNotConnect = errors.New("could not connect to redis")
+)
+
 var redis_default_config = map[string]interface{}{
 	"host":        "localhost",
 	"port":        6379,
@@ -42,10 +47,15 @@ func NewConnector(config *util.Config, logger *log.Logger) (*RedisConnector, err
 		logger = log.Default()
 	}
 
-	if err := config.MergeDefault(redis_default_config); err != nil {
-		logger.Println("could not parse redis config, using default(s)")
+	if config == nil {
 		config = util.NewConfig(redis_default_config, nil)
+	} else {
+		if err := config.MergeDefault(redis_default_config); err != nil {
+			logger.Println(err)
+			return nil, ErrMergeConfig
+		}
 	}
+
 	redisOptions := &redis.Options{}
 	host, _ := config.GetString("host")
 	port, _ := config.GetString("port")
@@ -77,7 +87,7 @@ func NewConnector(config *util.Config, logger *log.Logger) (*RedisConnector, err
 	status := connection.Ping(context.Background())
 	if status.Err() != nil {
 		logger.Println(status.Err())
-		return nil, errors.New("could not connect to redis")
+		return nil, ErrCouldNotConnect
 	}
 	logger.Println(status.String())
 	return &RedisConnector{

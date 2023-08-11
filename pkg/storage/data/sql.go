@@ -67,32 +67,36 @@ type DataBase struct {
 	context context.Context
 	config  *util.Config
 	cache   *cache.RedisConnector
-	Users   *UserDB
+	users   *UserDB
 	logger  *log.Logger
 }
 
 var defaultConfig = map[string]interface{}{
-	"Host":     "localhost",
-	"Port":     "5432",
-	"user":     "postgres",
-	"password": "postgres",
-	"DBname":   "postgres",
-	"sslmode":  "disable",
-	"MaxConns": "10",
-	"redis": map[string]interface{}{
-		"use": false,
-	},
-	"initFile": "db.init.d",
+	"Host":      "localhost",
+	"Port":      "5432",
+	"user":      "postgres",
+	"password":  "postgres",
+	"DBname":    "postgres",
+	"sslmode":   "disable",
+	"MaxConns":  "10",
+	"redis.use": false,
+	"initFile":  "db.init.d",
 }
 
 func NewConnector(ctx context.Context, logger *log.Logger, config *util.Config) (*DataBase, error) {
 	if logger == nil {
 		logger = log.Default()
 	}
-	if err := config.MergeDefault(defaultConfig); err != nil {
-		logger.Println(err)
-		return nil, ErrParseConfig
+
+	if config == nil {
+		config = util.NewConfig(defaultConfig, logger)
+	} else {
+		if err := config.MergeDefault(defaultConfig); err != nil {
+			logger.Println(err)
+			return nil, ErrParseConfig
+		}
 	}
+
 	connString := buildConnString(config)
 	if connString == "" {
 		return nil, ErrParseConfig
@@ -113,20 +117,18 @@ func NewConnector(ctx context.Context, logger *log.Logger, config *util.Config) 
 		logger.Println(err)
 		return nil, ErrConnect
 	}
+
 	dbConn := &DataBase{
 		pool:    db,
 		config:  config,
 		context: ctx,
 		logger:  logger,
 	}
-	dbConn.Users = NewUserDB(dbConn, "users", logger)
-	dbConn.cache = cache.NewStubConnector()
+	dbConn.users = NewUserDB(dbConn, "users", logger)
 	if redisConfig, ok := config.Get("redis").(*util.Config); ok && redisConfig != nil {
-		if redisConfig.GetBool("use") {
-			logger.Println("Using redis cache")
-			if err := dbConn.SetCache(config); err != nil {
-				return nil, err
-			}
+		dbConn.cache, err = setupRedisConnector(redisConfig, logger)
+		if err != nil {
+			return nil, ErrConnectRedis
 		}
 	} else if !ok {
 		return nil, errors.New("error parsing redis config")
@@ -134,6 +136,14 @@ func NewConnector(ctx context.Context, logger *log.Logger, config *util.Config) 
 
 	logger.Println("connected to database")
 	return dbConn, nil
+}
+
+func setupRedisConnector(redisConfig *util.Config, logger *log.Logger) (*cache.RedisConnector, error) {
+	if !redisConfig.GetBool("use") {
+		return cache.NewStubConnector(), nil
+	}
+	logger.Println("using redis cache")
+	return cache.NewConnector(redisConfig, logger)
 }
 
 func buildConnString(config *util.Config) string {
@@ -179,22 +189,6 @@ func buildConnString(config *util.Config) string {
 	}
 
 	return stringBuffer.String()
-}
-
-func (db *DataBase) SetCache(config *util.Config) error {
-	redisConf, ok := config.Get("redis").(*util.Config)
-	if !ok {
-		db.logger.Println("No redis config provided")
-		return nil
-	}
-	cache, err := cache.NewConnector(redisConf, db.logger)
-	if err != nil {
-		db.logger.Println(err)
-		return ErrConnectRedis
-	}
-	db.logger.Println("connected to redis")
-	db.cache = cache
-	return nil
 }
 
 func (db *DataBase) Disconnect() error {
@@ -489,6 +483,10 @@ func (db *DataBase) insert(ctx context.Context, tx pgx.Tx, table string, fields 
 	}
 	db.logger.Printf("inserted %d rows into %s", copyCount, table)
 	return nil
+}
+
+func (db *DataBase) GetUserDB() *UserDB {
+	return db.users
 }
 
 // query builder

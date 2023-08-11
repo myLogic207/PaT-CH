@@ -120,8 +120,10 @@ func (c *Config) getRecursive(key []string) interface{} {
 		return nil
 	}
 
-	if config, ok := c.store[currentKey].(*Config); ok {
-		return config.getRecursive(key[1:])
+	if rawConfig, ok := c.store[currentKey]; ok {
+		if config, ok := rawConfig.(*Config); ok {
+			return config.getRecursive(key[1:])
+		}
 	}
 
 	return nil
@@ -206,11 +208,9 @@ func (c *Config) MergeDefault(defaultConfig map[string]interface{}) error {
 			continue
 		}
 		if rawConfig, ok := rawValue.(map[string]interface{}); ok {
-			config := NewConfig(rawConfig, c.logger)
-			if err := c.MergeInConfig(rawKey, config); err != nil {
-				return err
-			}
-		} else if err := c.Set(rawKey, rawValue); err != nil {
+			rawValue = NewConfig(rawConfig, c.logger)
+		}
+		if err := c.Set(rawKey, rawValue); err != nil {
 			return err
 		}
 	}
