@@ -95,7 +95,7 @@ func setDefaultLoggerFlags(flags string) {
 		return
 	}
 	flagList := strings.Split(flags, ",")
-	var flagBuffer int
+	flagBuffer := 0
 	for _, flag := range flagList {
 		switch strings.ToLower(flag) {
 		case "date":
