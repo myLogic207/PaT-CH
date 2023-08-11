@@ -72,11 +72,17 @@ func LoadConfig(prefix string, logger *log.Logger) (*Config, error) {
 }
 
 func (c *Config) GetString(keyString string) (string, bool) {
-	if str, ok := c.Get(keyString).(string); ok {
-		return str, true
-	} else {
-		return fmt.Sprintf("%v", str), true
+	val := c.Get(keyString)
+	if val == nil {
+		return "", false
 	}
+	if str, ok := val.(string); ok {
+		return str, true
+	}
+	if fmtStr := fmt.Sprintf("%v", val); len(fmtStr) > 0 {
+		return fmtStr, true
+	}
+	return "", false
 }
 
 func (c *Config) GetConfig(keyString string) (*Config, bool) {
@@ -199,7 +205,12 @@ func (c *Config) MergeDefault(defaultConfig map[string]interface{}) error {
 		if val := c.Get(rawKey); val != nil {
 			continue
 		}
-		if err := c.Set(rawKey, rawValue); err != nil {
+		if rawConfig, ok := rawValue.(map[string]interface{}); ok {
+			config := NewConfig(rawConfig, c.logger)
+			if err := c.MergeInConfig(rawKey, config); err != nil {
+				return err
+			}
+		} else if err := c.Set(rawKey, rawValue); err != nil {
 			return err
 		}
 	}

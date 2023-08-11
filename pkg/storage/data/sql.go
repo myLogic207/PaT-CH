@@ -79,7 +79,9 @@ var defaultConfig = map[string]interface{}{
 	"DBname":   "postgres",
 	"sslmode":  "disable",
 	"MaxConns": "10",
-	"UseCache": false,
+	"redis": map[string]interface{}{
+		"use": false,
+	},
 	"initFile": "db.init.d",
 }
 
@@ -87,7 +89,10 @@ func NewConnector(ctx context.Context, logger *log.Logger, config *util.Config) 
 	if logger == nil {
 		logger = log.Default()
 	}
-	config.MergeDefault(defaultConfig)
+	if err := config.MergeDefault(defaultConfig); err != nil {
+		logger.Println(err)
+		return nil, ErrParseConfig
+	}
 	connString := buildConnString(config)
 	if connString == "" {
 		return nil, ErrParseConfig
@@ -102,6 +107,7 @@ func NewConnector(ctx context.Context, logger *log.Logger, config *util.Config) 
 		logger.Println(err)
 		return nil, ErrConnect
 	}
+	logger.Println("pinging database...")
 	err = db.Ping(ctx)
 	if err != nil {
 		logger.Println(err)
