@@ -27,8 +27,8 @@ func TestUserDB(t *testing.T) {
 		{"updated_at", "timestamp", 0, ""},
 	})
 	defer TEST_DB.DeleteTable(ctx, tableName)
-	TEST_DB.Users.SetTableName(tableName)
-	TEST_DB.Users.Create(ctx, "test", "test@example.net", "test123")
+	TEST_DB.users.SetTableName(tableName)
+	TEST_DB.users.Create(ctx, "test", "test@example.net", "test123")
 
 	defer TEST_DB.Delete(ctx, tableName, nil)
 	if err := testUserDBSelect(t, testBeginTime); err != nil {
@@ -47,18 +47,18 @@ func TestUserDB(t *testing.T) {
 		t.FailNow()
 	}
 
-	if err := TEST_DB.Users.DeleteById(ctx, user.ID()); err != nil {
+	if err := TEST_DB.users.DeleteById(ctx, user.ID()); err != nil {
 		t.Error(err)
 		t.FailNow()
 	}
-	if _, err := TEST_DB.Users.GetById(ctx, user.ID()); err == nil {
+	if _, err := TEST_DB.users.GetById(ctx, user.ID()); err == nil {
 		t.Error("user not deleted")
 		t.FailNow()
 	}
 }
 
 func testUserDBSelect(t *testing.T, testBeginTime time.Time) error {
-	user, err := TEST_DB.Users.GetByName(ctx, "test")
+	user, err := TEST_DB.users.GetByName(ctx, "test")
 	if err != nil {
 		return err
 	}
@@ -76,7 +76,7 @@ func testUserDBSelect(t *testing.T, testBeginTime time.Time) error {
 }
 
 func testUserAuthenticate(t *testing.T) (*system.User, error) {
-	user, err := TEST_DB.Users.AuthenticateByName(ctx, "test", "test123")
+	user, err := TEST_DB.users.AuthenticateByName(ctx, "test", "test123")
 	if err != nil {
 		t.Error("authenticate failed:")
 		return nil, err
@@ -87,13 +87,13 @@ func testUserAuthenticate(t *testing.T) (*system.User, error) {
 func testUserDBUpdate(t *testing.T, user *system.User) (*system.User, error) {
 	user.Name = "test2"
 	user.Email = "example3@test.net"
-	if _, err := TEST_DB.Users.Update(ctx, user); err != nil {
+	if _, err := TEST_DB.users.Update(ctx, user); err != nil {
 		t.Log("\n")
 		t.Error(err)
 		t.Log("\n")
 		t.FailNow()
 	}
-	user2, err := TEST_DB.Users.GetById(ctx, user.ID())
+	user2, err := TEST_DB.users.GetById(ctx, user.ID())
 	if err != nil {
 		t.Error(err)
 		t.FailNow()

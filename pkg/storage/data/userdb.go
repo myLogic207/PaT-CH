@@ -31,7 +31,11 @@ func NewUserDB(p *DataBase, userTable string, logger *log.Logger) *UserDB {
 	if logger == nil {
 		logger = log.Default()
 	}
-	return &UserDB{p, userTable, logger}
+	return &UserDB{
+		p:         p,
+		userTable: userTable,
+		logger:    logger,
+	}
 }
 
 func (udb *UserDB) SetTableName(userTable string) {
