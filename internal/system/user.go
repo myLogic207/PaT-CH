@@ -3,11 +3,23 @@ package system
 import (
 	"encoding/json"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 // TODO: Hash password
-func HashPassword(password string) string {
-	return password
+func EncryptPassword(password string) (string, error) {
+	return hashPassword(password)
+}
+
+func hashPassword(password string) (string, error) {
+	rawPass, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	return string(rawPass), err
+}
+
+func CheckPasswords(hashedPassword string, password string) bool {
+	err := bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(password))
+	return err == nil
 }
 
 type User struct {

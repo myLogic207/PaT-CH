@@ -19,12 +19,15 @@ func TestUserDB(t *testing.T) {
 	testBeginTime := time.Now().UTC()
 	tableName := tableName("test_user")
 	TEST_DB.CreateTable(ctx, tableName, []DBField{
-		{"id", "serial", 0, "PRIMARY KEY"},
-		{"name", "text", 0, ""},
-		{"email", "text", 0, ""},
-		{"password", "text", 0, ""},
-		{"created_at", "timestamp", 0, ""},
-		{"updated_at", "timestamp", 0, ""},
+		{"id", "serial", 0},
+		{"name", "text", 0},
+		{"email", "text", 0},
+		{"password", "text", 0},
+		{"created_at", "timestamp", 0},
+		{"updated_at", "timestamp", 0},
+	}, DBConstraint{
+		PrimaryKey:  []FieldName{"id"},
+		ForeignKeys: nil,
 	})
 	defer TEST_DB.DeleteTable(ctx, tableName)
 	TEST_DB.users.SetTableName(tableName)

@@ -1,6 +1,14 @@
 package system
 
-import "context"
+import (
+	"context"
+	"errors"
+)
+
+var (
+	ErrAuthFailed = errors.New("auth failed")
+	ErrNoSuchUser = errors.New("no such user")
+)
 
 type UserTable interface {
 	Authenticate(ctx context.Context, name string, password string) (*User, error)
@@ -28,12 +36,17 @@ func NewUserIMDB() *UserIMDB {
 func (u *UserIMDB) Authenticate(ctx context.Context, name string, password string) (*User, error) {
 	user, err := u.GetByName(ctx, name)
 	if err != nil {
-		return nil, err
+		return nil, ErrAuthFailed
 	}
-	if HashPassword(password) == u.IDPasswords[user.ID()] {
+	userPassHash, ok := u.IDPasswords[user.ID()]
+	if !ok {
+		return nil, ErrAuthFailed
+	}
+	// password check!
+	if CheckPasswords(userPassHash, password) {
 		return user, nil
 	}
-	return user, nil
+	return nil, ErrNoSuchUser
 }
 
 func (u *UserIMDB) GetByName(ctx context.Context, name string) (*User, error) {
@@ -43,7 +56,7 @@ func (u *UserIMDB) GetByName(ctx context.Context, name string) (*User, error) {
 		}
 	}
 
-	return nil, nil
+	return nil, ErrNoSuchUser
 }
 
 func (u *UserIMDB) GetByEmail(ctx context.Context, email string) (*User, error) {
@@ -71,16 +84,26 @@ func (u *UserIMDB) Create(ctx context.Context, name string, email string, passwo
 	id := u.nextId()
 	user.SetID(id)
 	u.Users[id] = user
-	u.IDPasswords[id] = HashPassword(password)
+	if password, err := EncryptPassword(password); err == nil {
+		u.IDPasswords[id] = password
+	} else {
+		return nil, err
+	}
 	return user, nil
 }
 
 func (u *UserIMDB) Update(ctx context.Context, user *User) (*User, error) {
+	if _, ok := u.Users[user.ID()]; !ok {
+		return nil, ErrNoSuchUser
+	}
 	u.Users[user.ID()] = user
 	return user, nil
 }
 
 func (u *UserIMDB) DeleteById(ctx context.Context, id int64) error {
+	if _, ok := u.Users[id]; !ok {
+		return ErrNoSuchUser
+	}
 	delete(u.Users, id)
 	delete(u.IDPasswords, id)
 	return nil
@@ -94,7 +117,7 @@ func (u *UserIMDB) DeleteByName(ctx context.Context, name string) error {
 			return nil
 		}
 	}
-	return nil
+	return ErrNoSuchUser
 }
 
 func (u *UserIMDB) nextId() int64 {

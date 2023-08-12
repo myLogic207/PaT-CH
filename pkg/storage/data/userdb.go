@@ -13,19 +13,25 @@ import (
 )
 
 var (
-	ErrNoUser       = errors.New("no user found")
-	ErrPassMismatch = errors.New("username or password incorrect")
-	ErrUserExists   = errors.New("username or email already exists")
-	ErrCreateUser   = errors.New("error creating user")
+	USER_PASSWORD_FIELDS = []string{"password"}
+	USER_FIELDS          = []string{"id", "name", "email", "created_at", "updated_at"}
+	ErrNoUser            = errors.New("no user found")
+	ErrPassMismatch      = errors.New("username or password incorrect")
+	ErrUserExists        = errors.New("username or email already exists")
+	ErrCreateUser        = errors.New("error creating user")
+	ErrUpdateUser        = errors.New("error updating user")
+	ErrDeleteUser        = errors.New("error deleting user")
+	ErrGetAll            = errors.New("error getting all users")
 )
 
 type UserDB struct {
 	p         *DataBase
 	userTable string
+	pwdTable  string
 	logger    *log.Logger
 }
 
-func NewUserDB(p *DataBase, userTable string, logger *log.Logger) *UserDB {
+func NewUserDB(p *DataBase, userTable string, secureTable string, logger *log.Logger) *UserDB {
 	userTable = strings.ToLower(userTable)
 	userTable = strings.TrimSpace(userTable)
 	if logger == nil {
@@ -34,6 +40,7 @@ func NewUserDB(p *DataBase, userTable string, logger *log.Logger) *UserDB {
 	return &UserDB{
 		p:         p,
 		userTable: userTable,
+		pwdTable:  secureTable,
 		logger:    logger,
 	}
 }
@@ -53,15 +60,24 @@ func (udb *UserDB) Create(ctx context.Context, name string, email string, passwo
 	if strings.ContainsAny(name, " \t\r ") {
 		return nil, fmt.Errorf("username cannot contain spaces")
 	}
-	hash := system.HashPassword(password)
-	if err := udb.p.Insert(ctx, udb.userTable, []FieldName{"name", "email", "password", "created_at", "updated_at"}, [][]interface{}{{name, email, hash, now, now}}); err != nil {
-		return nil, err
+
+	passwordHash, err := system.EncryptPassword(password)
+	if err != nil {
+		udb.logger.Println(err)
+		return nil, ErrCreateUser
 	}
+
+	if err := udb.p.Insert(ctx, udb.userTable, []FieldName{"name", "email", "password", "created_at", "updated_at"}, [][]interface{}{{name, email, passwordHash, now, now}}); err != nil {
+		udb.logger.Println(err)
+		return nil, ErrCreateUser
+	}
+
 	user, err := udb.GetByName(ctx, name)
 	if err != nil {
 		udb.logger.Println(err)
 		return nil, ErrCreateUser
 	}
+
 	udb.logger.Printf("Created user %s\n", name)
 	go udb.updateCache(ctx, user)
 	return user, nil
@@ -69,9 +85,9 @@ func (udb *UserDB) Create(ctx context.Context, name string, email string, passwo
 
 func (udb *UserDB) GetAll(ctx context.Context) ([]*system.User, error) {
 	udb.logger.Println("Getting all users")
-	val, err := udb.p.Select(ctx, udb.userTable, []FieldName{"*"}, nil, "")
-	if err != nil {
-		return nil, err
+	val := udb.p.Select(ctx, udb.userTable, []string{"*"}, nil, "")
+	if len(val) == 0 {
+		return nil, ErrGetAll
 	}
 	users := make([]*system.User, len(val))
 	for i, v := range val {
@@ -84,8 +100,6 @@ func (udb *UserDB) GetAll(ctx context.Context) ([]*system.User, error) {
 	}
 	return users, nil
 }
-
-var USER_FIELDS = []FieldName{"id", "name", "email", "created_at", "updated_at"}
 
 func (udb *UserDB) GetByName(ctx context.Context, name string) (*system.User, error) {
 	if val, ok := udb.GetFromCache(ctx, name); ok {
@@ -112,10 +126,7 @@ func (udb *UserDB) GetById(ctx context.Context, id int64) (*system.User, error) 
 }
 
 func (udb *UserDB) getUserWithWhere(ctx context.Context, whereMap *WhereMap) (*system.User, error) {
-	raw_db_user, err := udb.p.Select(ctx, udb.userTable, USER_FIELDS, whereMap, "LIMIT 1")
-	if err != nil {
-		return nil, err
-	}
+	raw_db_user := udb.p.Select(ctx, udb.userTable, USER_FIELDS, whereMap, "LIMIT 1")
 	if len(raw_db_user) == 0 {
 		return nil, ErrNoUser
 	}
@@ -132,24 +143,17 @@ func (udb *UserDB) getUserWithWhere(ctx context.Context, whereMap *WhereMap) (*s
 	return user, nil
 }
 
-var USER_PASSWORD_FIELDS = []FieldName{"password"} // salt, etc.
-
 func (udb *UserDB) verifyPasswordById(ctx context.Context, id int64, password string) bool {
-	val, err := udb.p.Select(ctx, udb.userTable, USER_PASSWORD_FIELDS, NewWhereMap(map[FieldName]interface{}{"id": id}), "LIMIT 1")
-	if err != nil {
+	rawPasswordHash := udb.p.Select(ctx, udb.userTable, USER_PASSWORD_FIELDS, NewWhereMap(map[FieldName]interface{}{"id": id}), "LIMIT 1")
+	if len(rawPasswordHash) == 0 {
 		return false
 	}
-	if len(val) == 0 {
+	passwordHash, ok := rawPasswordHash[0]["password"].(string)
+	if !ok {
 		return false
 	}
-	user_password_hash := val[0]["password"].(string)
-	if user_password_hash == "" {
-		return false
-	}
-	if system.HashPassword(password) == user_password_hash {
-		return true
-	}
-	return false
+
+	return system.CheckPasswords(passwordHash, password)
 }
 
 func (udb *UserDB) Update(ctx context.Context, user *system.User) (*system.User, error) {
@@ -170,9 +174,14 @@ func (udb *UserDB) Update(ctx context.Context, user *system.User) (*system.User,
 func (udb *UserDB) UpdateUserPassword(ctx context.Context, user *system.User, new_password string) (*system.User, error) {
 	timestamp := fmt.Sprint(time.Now().UTC())
 	timestamp = timestamp[:len(timestamp)-9]
+	newPasswordHash, err := system.EncryptPassword(new_password)
+	if err != nil {
+		udb.logger.Println(err)
+		return nil, ErrUpdateUser
+	}
 	userMap := map[FieldName]DBValue{
 		"updated_at": timestamp,
-		"password":   system.HashPassword(new_password),
+		"password":   newPasswordHash,
 	}
 	if err := udb.p.Update(ctx, udb.userTable, userMap, NewWhereMap(map[FieldName]interface{}{"id": user.ID()})); err != nil {
 		return nil, err
