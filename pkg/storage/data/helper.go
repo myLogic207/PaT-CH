@@ -58,20 +58,40 @@ func (m *WhereMap) Get(field FieldName) DBValue {
 }
 
 type DBInit struct {
-	Name  string    `json:"name" yaml:"name"`     // e.g. "system"
-	Table []DBTable `json:"tables" yaml:"tables"` // e.g. "users"
+	Name   string    `json:"name" yaml:"name"`     // e.g. "system"
+	Tables []DBTable `json:"tables" yaml:"tables"` // e.g. "users"
+	Raw    string    `json:"sql,omitempty" yaml:"sql,omitempty"`
 }
 
 func (i *DBInit) String() string {
 	sb := strings.Builder{}
-	sb.WriteString(fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s;", i.Table[0].String()))
-	if len(i.Table) < 2 {
+	sb.WriteString(buildCreateTableSQL(i.Tables))
+	if i.Raw != "" {
+		sb.WriteString(buildCreateRawSQL(i.Raw))
+	}
+	return sb.String()
+}
+
+func buildCreateTableSQL(tables []DBTable) string {
+	sb := strings.Builder{}
+	sb.WriteString(fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s;", tables[0].String()))
+	if len(tables) < 2 {
 		return sb.String()
 	}
-	for _, table := range i.Table[1:] {
+	for _, table := range tables[1:] {
 		sb.WriteString(fmt.Sprintf("\\CREATE TABLE IF NOT EXISTS %s;", table.String()))
 	}
 	return sb.String()
+}
+
+func buildCreateRawSQL(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	if !strings.HasSuffix(raw, ";") {
+		raw += ";"
+	}
+	return fmt.Sprintf("%s", raw)
 }
 
 type DBTable struct {
