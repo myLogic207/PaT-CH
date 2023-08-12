@@ -19,14 +19,13 @@ import (
 )
 
 const (
-	BASE_ADDR = "http://localhost:12345"
-	PREFIX    = "PATCHTEST"
+	PREFIX = "PATCHTEST"
 )
 
 var TEST_SERVER *api.Server
 
 var DEFAULT_CONFIG = map[string]interface{}{
-	"api.port": 12345,
+	"api.port": 3080,
 }
 
 func TestMain(m *testing.M) {
