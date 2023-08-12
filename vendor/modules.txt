@@ -180,8 +180,10 @@ github.com/ugorji/go/codec
 # golang.org/x/arch v0.3.0
 ## explicit; go 1.17
 golang.org/x/arch/x86/x86asm
-# golang.org/x/crypto v0.9.0
+# golang.org/x/crypto v0.12.0
 ## explicit; go 1.17
+golang.org/x/crypto/bcrypt
+golang.org/x/crypto/blowfish
 golang.org/x/crypto/pbkdf2
 golang.org/x/crypto/sha3
 # golang.org/x/net v0.10.0
@@ -196,11 +198,11 @@ golang.org/x/net/idna
 # golang.org/x/sync v0.1.0
 ## explicit
 golang.org/x/sync/semaphore
-# golang.org/x/sys v0.8.0
+# golang.org/x/sys v0.11.0
 ## explicit; go 1.17
 golang.org/x/sys/cpu
 golang.org/x/sys/unix
-# golang.org/x/text v0.9.0
+# golang.org/x/text v0.12.0
 ## explicit; go 1.17
 golang.org/x/text/cases
 golang.org/x/text/internal
