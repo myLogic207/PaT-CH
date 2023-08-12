@@ -4,13 +4,16 @@
         {
             "name": "users",
             "fields": [
-                { "name": "id", "type": "serial", "constraint": "primary key" },
+                { "name": "id", "type": "serial" },
                 { "name": "name", "type": "varchar", "length": 255 },
                 { "name": "email", "type": "varchar", "length": 255 },
                 { "name": "password", "type": "varchar", "length": 255 },
                 { "name": "created_at", "type": "timestamptz" },
                 { "name": "updated_at", "type": "timestamptz" }
-            ]
+            ],
+            "constraints": {
+                "primaryKey": ["id"]
+            }
         },
         {
             "name": "roles",
