@@ -14,7 +14,7 @@
                 "PREFIX": "patchdebug",
                 "ENVIRONMENT": "development",
                 "PATCHDEBUG_DIR": "${workspaceFolder}\\work",
-                "PATCHDEBUG_LOG_FOLDER": "${workspaceFolder}\\work\\log",
+                "PATCHDEBUG_LOG_FOLDER": "${workspaceFolder}\\work\\logs",
                 "PATCHDEBUG_LOG_FLAGS": "time,microseconds,shortfile",
                 "PATCHDEBUG_API_HOST": "localhost",
                 "PATCHDEBUG_API_PORT": "8080",

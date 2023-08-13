@@ -24,19 +24,19 @@
                 { "name": "updated_at", "type": "timestamptz" }
             ],
             "constraints": {
-                "primaryKey": ["id"]
+                "primaryKey": ["role_id"]
             }
         },
         {
             "name": "permissions",
             "fields": [
-                { "name": "id", "type": "serial"},
+                { "name": "permission_id", "type": "serial"},
                 { "name": "name", "type": "varchar", "length": 255 },
                 { "name": "created_at", "type": "timestamptz" },
                 { "name": "updated_at", "type": "timestamptz" }
             ],
             "constraints": {
-                "primaryKey": ["id"]
+                "primaryKey": ["permission_id"]
             }
         },
         {

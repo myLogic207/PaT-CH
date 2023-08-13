@@ -133,7 +133,8 @@ func NewConnector(ctx context.Context, logger *log.Logger, config *util.Config) 
 		return nil, errors.New("error parsing redis config")
 	}
 
-	logger.Println("connected to database")
+	dbConnConfig := db.Config().ConnConfig.Copy()
+	logger.Println("connected to database", dbConnConfig.Database, "on", dbConnConfig.Host, ":", dbConnConfig.Port, "with user", dbConnConfig.User)
 	return dbConn, nil
 }
 
@@ -173,18 +174,18 @@ func buildConnString(config *util.Config) string {
 		return ""
 	}
 
-	if dbName, ok := config.GetString("DBname"); ok {
+	if dbName, ok := config.GetString("name"); ok {
 		stringBuffer.WriteString(dbName + "?")
 	} else {
 		return ""
 	}
 
 	if sslMode, ok := config.GetString("sslmode"); ok {
-		stringBuffer.WriteString("sslmode=" + sslMode + "&")
+		stringBuffer.WriteString("sslmode=" + sslMode)
 	}
 
 	if poolMaxConns, ok := config.GetString("MaxConns"); ok {
-		stringBuffer.WriteString("pool_max_conns=" + poolMaxConns)
+		stringBuffer.WriteString("&pool_max_conns=" + poolMaxConns)
 	}
 
 	return stringBuffer.String()
@@ -244,16 +245,14 @@ func (db *DataBase) loadInitFile(file string) error {
 		db.logger.Println(err)
 		return ErrInitDB
 	}
-	if os.Getenv("ENVIRONMENT") == "DEVELOPMENT" {
-		db.logger.Println(strings.ReplaceAll(query, "\\", "\\\n"))
-
+	db.logger.Println("Executing init query")
+	result, err := db.transactionWrapper(db.context, query)
+	if err != nil {
+		db.logger.Println(err)
+		return ErrInitDB
 	}
-	for _, q := range strings.Split(query, "\\") {
-		db.logger.Println("Executing init query")
-		if _, err = db.pool.Exec(db.context, q); err != nil {
-			db.logger.Println(err)
-			return ErrInitDB
-		}
+	if result != nil {
+		db.logger.Println(result)
 	}
 	return nil
 }
@@ -448,10 +447,15 @@ func (db *DataBase) Delete(ctx context.Context, table string, wm *WhereMap) erro
 // transactionWrapper
 func (db *DataBase) transactionWrapper(ctx context.Context, query string) (DBResult, error) {
 	db.logger.Printf("wrapping transaction")
-	if os.Getenv("ENVIRONMENT") == "development" {
-		db.logger.Printf("query: %s", query)
+	accessMode := pgx.ReadWrite
+	if strings.HasPrefix(query, "SELECT") {
+		accessMode = pgx.ReadOnly
 	}
-	tx, err := db.pool.Begin(ctx)
+	tx, err := db.pool.BeginTx(ctx, pgx.TxOptions{
+		IsoLevel:       pgx.Serializable,
+		AccessMode:     accessMode,
+		DeferrableMode: pgx.NotDeferrable,
+	})
 	if err != nil {
 		db.logger.Println(err)
 		return nil, ErrTxStart

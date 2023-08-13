@@ -58,10 +58,9 @@ func (m *WhereMap) Get(field FieldName) DBValue {
 }
 
 type DBInit struct {
-	Name        string         `json:"name" yaml:"name"`     // e.g. "system"
-	Tables      []DBTable      `json:"tables" yaml:"tables"` // e.g. "users"
-	Constraints []DBConstraint `json:"constraints,omitempty" yaml:"constraints,omitempty"`
-	Raw         string         `json:"sql,omitempty" yaml:"sql,omitempty"`
+	Name   string    `json:"name" yaml:"name"`     // e.g. "system"
+	Tables []DBTable `json:"tables" yaml:"tables"` // e.g. "users"
+	Raw    string    `json:"sql,omitempty" yaml:"sql,omitempty"`
 }
 
 func (i *DBInit) String() string {
@@ -80,7 +79,7 @@ func buildCreateTableSQL(tables []DBTable) string {
 		return sb.String()
 	}
 	for _, table := range tables[1:] {
-		sb.WriteString(fmt.Sprintf("\\%s", table.String()))
+		sb.WriteString(table.String())
 	}
 	return sb.String()
 }
