@@ -15,9 +15,8 @@ const TIMEOUT = 5
 
 var (
 	LOGFOLDER, LOGFOLDEROLD, SUFFIX, REPLACECHAR string
-	LOGFLAGS                                     int = 0
-	logFileList                                      = []*os.File{}
-	defaultLogConfig                                 = map[string]interface{}{
+	logFileList                                  = []*os.File{}
+	defaultLogConfig                             = map[string]interface{}{
 		"flags":       "date,time,microseconds,utc,shortfile,msgprefix",
 		"suffix":      ".log",
 		"folder":      "/var/log",
@@ -119,7 +118,6 @@ func setDefaultLoggerFlags(flags string) {
 			log.Println("unknown flag", flag)
 		}
 	}
-	LOGFLAGS = flagBuffer
 	log.SetFlags(flagBuffer)
 }
 
@@ -147,11 +145,7 @@ func CreateLogger(system_name string) (*log.Logger, error) {
 	}
 
 	writer := io.MultiWriter(writerList...)
-	logFlags := log.Ldate | log.Ltime | log.Lmicroseconds | log.Lshortfile | log.Lmsgprefix
-	if LOGFLAGS != 0 {
-		logFlags = LOGFLAGS
-	}
-	logger := log.New(writer, system_name+": ", logFlags)
+	logger := log.New(writer, system_name+": ", log.Ldate|log.Ltime|log.Lmicroseconds|log.LUTC|log.Lshortfile|log.Lmsgprefix)
 	log.Println("logger prepared")
 	return logger, nil
 }

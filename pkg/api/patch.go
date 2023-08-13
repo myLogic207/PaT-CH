@@ -96,11 +96,11 @@ func sanitizePath(path string) string {
 	return path
 }
 
-func validatePath(rawUrl string) (*url.URL, error) {
-	if rawUrl == "" {
+func validatePath(rawurl string) (*url.URL, error) {
+	if rawurl == "" {
 		return nil, errors.New("path cannot be empty")
 	}
-	url, err := url.Parse(rawUrl)
+	url, err := url.Parse(rawurl)
 	if err != nil {
 		return nil, err
 	}
