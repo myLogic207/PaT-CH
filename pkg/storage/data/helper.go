@@ -98,7 +98,7 @@ func buildCreateRawSQL(raw string) string {
 type DBTable struct {
 	Name        string       `json:"name" yaml:"name"` // e.g. "users"
 	Fields      []DBField    `json:"fields" yaml:"fields"`
-	Constraints DBConstraint `json:"constraint" yaml:"constraint"`
+	Constraints DBConstraint `json:"constraints" yaml:"constraints"`
 }
 
 func (t *DBTable) String() string {
@@ -167,8 +167,8 @@ func (c *DBForeignConstraint) String() string {
 // DBContraintReference represents a reference to a field in another table
 
 type DBConstraintReference struct {
-	Table  string      `json:"foreignTable" yaml:"foreignTable"`
-	Fields []FieldName `json:"foreignField" yaml:"foreignField"`
+	Table  string      `json:"table" yaml:"table"`
+	Fields []FieldName `json:"fields" yaml:"fields"`
 }
 
 func (r *DBConstraintReference) String() string {
