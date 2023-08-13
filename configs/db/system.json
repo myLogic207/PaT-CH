@@ -4,10 +4,22 @@
         {
             "name": "users",
             "fields": [
-                { "name": "id", "type": "serial" },
+                { "name": "user_id", "type": "serial" },
                 { "name": "name", "type": "varchar", "length": 255 },
                 { "name": "email", "type": "varchar", "length": 255 },
                 { "name": "password", "type": "varchar", "length": 255 },
+                { "name": "created_at", "type": "timestamptz" },
+                { "name": "updated_at", "type": "timestamptz" }
+            ],
+            "constraints": {
+                "primaryKey": ["user_id"]
+            }
+        },
+        {
+            "name": "roles",
+            "fields": [
+                { "name": "role_id", "type": "serial"},
+                { "name": "name", "type": "varchar", "length": 255 },
                 { "name": "created_at", "type": "timestamptz" },
                 { "name": "updated_at", "type": "timestamptz" }
             ],
@@ -16,32 +28,32 @@
             }
         },
         {
-            "name": "roles",
-            "fields": [
-                { "name": "id", "type": "serial", "constraint": "primary key"},
-                { "name": "name", "type": "varchar", "length": 255 },
-                { "name": "created_at", "type": "timestamptz" },
-                { "name": "updated_at", "type": "timestamptz" }
-            ]
-        },
-        {
             "name": "permissions",
             "fields": [
-                { "name": "id", "type": "serial", "constraint": "primary key"},
+                { "name": "id", "type": "serial"},
                 { "name": "name", "type": "varchar", "length": 255 },
                 { "name": "created_at", "type": "timestamptz" },
                 { "name": "updated_at", "type": "timestamptz" }
-            ]
+            ],
+            "constraints": {
+                "primaryKey": ["id"]
+            }
         },
         {
             "name": "user_roles",
             "fields": [
-                { "name": "id", "type": "serial", "constraint": "primary key"},
                 { "name": "user_id", "type": "int" },
                 { "name": "role_id", "type": "int" },
                 { "name": "created_at", "type": "timestamptz" },
                 { "name": "updated_at", "type": "timestamptz" }
-            ]
+            ],
+            "constraints": {
+                "primaryKey": ["user_id", "role_id"],
+                "foreignKeys": [
+                    { "fields": ["user_id"], "references": { "table": "users", "fields": ["user_id"] } },
+                    { "fields": ["role_id"], "references": { "table": "roles", "fields": ["role_id"] } }
+                ]
+            }
         }
     ]
 }
