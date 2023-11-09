@@ -1,0 +1,59 @@
+{
+    "name": "system",
+    "tables": [
+        {
+            "name": "users",
+            "fields": [
+                { "name": "user_id", "type": "serial" },
+                { "name": "name", "type": "varchar", "length": 255 },
+                { "name": "email", "type": "varchar", "length": 255 },
+                { "name": "password", "type": "varchar", "length": 255 },
+                { "name": "created_at", "type": "timestamptz" },
+                { "name": "updated_at", "type": "timestamptz" }
+            ],
+            "constraints": {
+                "primaryKey": ["user_id"]
+            }
+        },
+        {
+            "name": "roles",
+            "fields": [
+                { "name": "role_id", "type": "serial"},
+                { "name": "name", "type": "varchar", "length": 255 },
+                { "name": "created_at", "type": "timestamptz" },
+                { "name": "updated_at", "type": "timestamptz" }
+            ],
+            "constraints": {
+                "primaryKey": ["role_id"]
+            }
+        },
+        {
+            "name": "permissions",
+            "fields": [
+                { "name": "permission_id", "type": "serial"},
+                { "name": "name", "type": "varchar", "length": 255 },
+                { "name": "created_at", "type": "timestamptz" },
+                { "name": "updated_at", "type": "timestamptz" }
+            ],
+            "constraints": {
+                "primaryKey": ["permission_id"]
+            }
+        },
+        {
+            "name": "user_roles",
+            "fields": [
+                { "name": "user_id", "type": "int" },
+                { "name": "role_id", "type": "int" },
+                { "name": "created_at", "type": "timestamptz" },
+                { "name": "updated_at", "type": "timestamptz" }
+            ],
+            "constraints": {
+                "primaryKey": ["user_id", "role_id"],
+                "foreignKeys": [
+                    { "fields": ["user_id"], "references": { "table": "users", "fields": ["user_id"] } },
+                    { "fields": ["role_id"], "references": { "table": "roles", "fields": ["role_id"] } }
+                ]
+            }
+        }
+    ]
+}

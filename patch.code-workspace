@@ -6,9 +6,54 @@
     ],
 	"settings": {
 		"cSpell.words": [
+			"cockroachlabs",
 			"godotenv",
+			"gonic",
+			"IMDB",
+			"jackc",
 			"joho",
-			"redisdb"
+			"LOGFLAGS",
+			"LOGFOLDER",
+			"LOGFOLDEROLD",
+			"PATCHTEST",
+			"PATCHTESTCONF",
+			"PATCHTESTDB",
+			"pgconn",
+			"pgxpool",
+			"redisdb",
+			"REPLACECHAR"
+		],
+		"sqltools.connections": [
+			{
+				"pgOptions": {
+					"ssl": {
+						"ca": ".\\work\\cockroach_root.crt"
+					}
+				},
+				"previewLimit": 50,
+				"server": "patch-test-6310.7tc.cockroachlabs.cloud",
+				"port": 26257,
+				"driver": "CockroachDB",
+				"name": "Patch DB",
+				"group": "Patch",
+				"database": "patch_db",
+				"username": "patch"
+			},
+			{
+				"pgOptions": {
+					"ssl": {
+						"ca": ".\\work\\cockroach_root.crt"
+					}
+				},
+				"previewLimit": 50,
+				"server": "patch-test-6310.7tc.cockroachlabs.cloud",
+				"port": 26257,
+				"driver": "CockroachDB",
+				"name": "Patch DB Test",
+				"group": "Patch",
+				"database": "patch_db_test",
+				"username": "patch_test"
+			}
 		]
 	}
 }

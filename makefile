@@ -1,6 +1,5 @@
 GO = go
 OUT = out
-SRC = src
 DOCKER_USERNAME ?= myLogic207
 APP_NAME ?= pat-ch
 VERSION ?= 0.0.1
@@ -15,23 +14,17 @@ run: clean build redis-server-running
 .ONESHELL:
 compile:
 	@echo "Compiling for every OS and Platform"
-	pushd .
 	mkdir -p ${OUT}
-	cd ${SRC}
 	GOOS=freebsd GOARCH=386 ${GO} build -o ../${OUT}/${APP_NAME}_freebsd-386 .
 	GOOS=linux GOARCH=386 ${GO} build -o ../${OUT}/${APP_NAME}_linux-386 .
 	GOOS=windows GOARCH=386 ${GO} build -o ../${OUT}/${APP_NAME}_windows-386 .
-	popd
 
 .PHONY: build
 .ONESHELL:
 SHELL := /bin/bash
 build:
-	pushd .
 	mkdir -p ${OUT}
-	cd ${SRC}
 	${GO} build -o ../${OUT}/${APP_NAME} .
-	popd
 
 .PHONY: docker
 docker:
